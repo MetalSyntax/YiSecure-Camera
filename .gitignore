@@ -1,0 +1,18 @@
+# Android
+*.iml
+.gradle
+local.properties
+.idea/
+.DS_Store
+build/
+/captures
+.externalNativeBuild
+.cxx
+
+# Propietario de Yi / Kami: NUNCA al repo (lo genera tools/extract_sdk.sh desde tu teléfono)
+/app/libs/
+/app/src/main/jniLibs/
+/yi.properties
+/private/
+/dist/
+*.apk
