@@ -1,12 +1,25 @@
 package com.metalsyntax.yihomelocal.ui.components
 
+import android.app.Activity
+import android.content.pm.ActivityInfo
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.runtime.*
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,7 +58,7 @@ fun StatusBadge(online: Boolean, text: String = if (online) "LIVE" else "OFFLINE
     ) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(c))
         Spacer(Modifier.width(6.dp))
-        Mono(text, if (online) PureWhite else MutedText, 10.sp)
+        Mono(text, if (online) OnAccent else MutedText, 10.sp)
     }
 }
 
@@ -66,7 +79,7 @@ fun PrimaryButton(text: String, enabled: Boolean = true, modifier: Modifier = Mo
     Button(
         onClick = onClick, enabled = enabled, modifier = modifier.height(48.dp), shape = RoundedCornerShape(4.dp),
         colors = ButtonDefaults.buttonColors(containerColor = CrimsonRed, disabledContainerColor = SurfaceHigh),
-    ) { Text(text, color = PureWhite, fontWeight = FontWeight.SemiBold) }
+    ) { Text(text, color = OnAccent, fontWeight = FontWeight.SemiBold) }
 
 /** Botón secundario: #2A2A2A con borde #383838. */
 @Composable
@@ -77,19 +90,59 @@ fun SecondaryButton(text: String, modifier: Modifier = Modifier.fillMaxWidth(), 
         border = androidx.compose.foundation.BorderStroke(1.dp, BorderStrong),
     ) { Mono(text.uppercase(), color, 12.sp) }
 
-/** Campo de texto plano según el diseño (borde blanco al enfocar). */
+/** Campo de texto plano según el diseño (borde blanco al enfocar). Con [password] lleva el ojo para ver lo escrito. */
 @Composable
 fun Field(
     value: String, onChange: (String) -> Unit, label: String, modifier: Modifier = Modifier.fillMaxWidth(),
     password: Boolean = false, enabled: Boolean = true,
-) = OutlinedTextField(
-    value = value, onValueChange = onChange, label = { Text(label) }, singleLine = true, enabled = enabled, modifier = modifier,
-    visualTransformation = if (password) androidx.compose.ui.text.input.PasswordVisualTransformation()
-    else androidx.compose.ui.text.input.VisualTransformation.None,
-    shape = RoundedCornerShape(4.dp),
-    colors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = PureWhite, unfocusedBorderColor = BorderSubtle, focusedLabelColor = PureWhite,
-        unfocusedLabelColor = MutedText, focusedContainerColor = CardBackground, unfocusedContainerColor = CardBackground,
-        cursorColor = PureWhite,
-    ),
-)
+) {
+    var shown by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = value, onValueChange = onChange, label = { Text(label) }, singleLine = true, enabled = enabled, modifier = modifier,
+        visualTransformation = if (password && !shown) PasswordVisualTransformation() else VisualTransformation.None,
+        keyboardOptions = if (password) KeyboardOptions(keyboardType = KeyboardType.Password) else KeyboardOptions.Default,
+        trailingIcon = if (password) {
+            { PasswordEye(shown) { shown = !shown } }
+        } else null,
+        shape = RoundedCornerShape(4.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = PureWhite, unfocusedBorderColor = BorderSubtle, focusedLabelColor = PureWhite,
+            unfocusedLabelColor = MutedText, focusedContainerColor = CardBackground, unfocusedContainerColor = CardBackground,
+            cursorColor = PureWhite, focusedTextColor = PureWhite, unfocusedTextColor = PureWhite,
+        ),
+    )
+}
+
+@Composable
+fun PasswordEye(shown: Boolean, onToggle: () -> Unit) = IconButton(onClick = onToggle) {
+    Icon(
+        if (shown) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+        if (shown) "Ocultar contraseña" else "Ver contraseña", tint = MutedText,
+    )
+}
+
+/** Pantalla completa = horizontal sin barras del sistema; se deshace al salir o al pasar a false. */
+@Composable
+fun ImmersiveLandscape(full: Boolean) {
+    val activity = LocalContext.current as? Activity
+    DisposableEffect(full) {
+        val w = activity?.window
+        if (w != null) {
+            val ctl = WindowCompat.getInsetsController(w, w.decorView)
+            if (full) {
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                ctl.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                ctl.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                ctl.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        onDispose {
+            if (full) {
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                activity?.window?.let { WindowCompat.getInsetsController(it, it.decorView).show(WindowInsetsCompat.Type.systemBars()) }
+            }
+        }
+    }
+}

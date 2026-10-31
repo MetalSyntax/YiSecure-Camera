@@ -3,9 +3,9 @@ package com.metalsyntax.yihomelocal.ui.components
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
-import android.view.PixelCopy
-import android.view.SurfaceHolder
-import android.view.SurfaceView
+import android.graphics.SurfaceTexture
+import android.view.Surface
+import android.view.TextureView
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -21,18 +21,14 @@ import com.tutk.IOTC.AVFrame
 import com.xiaoyi.camera.sdk.AntsCamera
 import kotlinx.coroutines.delay
 
-/** Lo que la pantalla de vivo necesita del video: captura (PixelCopy del Surface) y grabación MP4 del stream. */
+/** Lo que la pantalla de vivo necesita del video: captura (bitmap del TextureView) y grabación MP4 del stream. */
 class LiveTools {
-    var view: SurfaceView? = null
+    var view: TextureView? = null
     @Volatile var recorder: Mp4Recorder? = null
         private set
 
-    fun capture(ok: (Bitmap?) -> Unit) {
-        val v = view
-        if (v == null || v.width == 0 || !v.holder.surface.isValid) return ok(null)
-        val bmp = Bitmap.createBitmap(v.width, v.height, Bitmap.Config.ARGB_8888)
-        PixelCopy.request(v, bmp, { r -> ok(if (r == PixelCopy.SUCCESS) bmp else null) }, Handler(Looper.getMainLooper()))
-    }
+    /** Captura el cuadro completo (sin el zoom de la vista). */
+    fun capture(ok: (Bitmap?) -> Unit) = ok(view?.takeIf { it.isAvailable }?.bitmap)
 
     fun startRecording(file: java.io.File) { recorder = Mp4Recorder(file) }
 
@@ -52,37 +48,39 @@ class LiveTools {
 fun LiveView(
     camera: CameraDevice, session: Int, quality: Int, audio: Boolean,
     onState: (String) -> Unit, onCamera: (AntsCamera?) -> Unit, modifier: Modifier = Modifier, tools: LiveTools? = null,
+    /** Hora (epoch s) de cada cuadro: sirve para mostrar por dónde va la reproducción de la microSD. */
+    onFrameTime: ((Long) -> Unit)? = null,
 ) {
     val ctx = LocalContext.current
     val state by rememberUpdatedState(onState)
     val audioOn by rememberUpdatedState(audio)
-    var view by remember { mutableStateOf<SurfaceView?>(null) }
-    var holder by remember { mutableStateOf<SurfaceHolder?>(null) }
+    var view by remember { mutableStateOf<TextureView?>(null) }
+    // TextureView (no SurfaceView) para que el zoom con graphicsLayer escale el video
+    var surface by remember { mutableStateOf<Surface?>(null) }
     var live by remember { mutableStateOf(false) }
 
     AndroidView(
         modifier = modifier,
         factory = { c ->
-            SurfaceView(c).apply {
+            TextureView(c).apply {
                 view = this
                 tools?.view = this
                 keepScreenOn = true // no apagar la pantalla mientras se mira el vivo
-                this.holder.addCallback(object : SurfaceHolder.Callback {
-                    override fun surfaceCreated(h: SurfaceHolder) { holder = h }
-                    override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, ht: Int) {}
-                    override fun surfaceDestroyed(h: SurfaceHolder) { holder = null }
-                })
+                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                    override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) { surface = Surface(st) }
+                    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {}
+                    override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean { surface?.release(); surface = null; return true }
+                    override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
+                }
             }
         },
     )
 
     fun snapshot() {
         val v = view ?: return
-        if (!live || v.width == 0 || !v.holder.surface.isValid) return
-        val bmp = Bitmap.createBitmap(v.width, v.height, Bitmap.Config.ARGB_8888)
-        PixelCopy.request(v, bmp, { r ->
-            if (r == PixelCopy.SUCCESS) Thread { Snapshots.save(ctx, camera.uid, bmp) }.start()
-        }, Handler(Looper.getMainLooper()))
+        if (!live || !v.isAvailable) return
+        val bmp = v.bitmap ?: return
+        Thread { Snapshots.save(ctx, camera.uid, bmp) }.start()
     }
 
     LaunchedEffect(live) {
@@ -91,9 +89,9 @@ fun LiveView(
         while (true) { snapshot(); delay(10_000) }
     }
 
-    val h = holder ?: return
-    DisposableEffect(h, camera.uid, session) {
-        val video = VideoDecoder(h.surface)
+    val sf = surface ?: return
+    DisposableEffect(sf, camera.uid, session) {
+        val video = VideoDecoder(sf)
         val sound = AudioDecoder()
         live = false
         val cam = YiP2p.open(camera, quality, audio, object : YiP2p.Listener() {
@@ -102,6 +100,7 @@ fun LiveView(
                 state(text)
             }
             override fun onFrame(f: AVFrame) {
+                onFrameTime?.invoke(f.timeStamp.toLong())
                 video.feed(f)
                 tools?.recorder?.write(f)
             }
@@ -110,7 +109,7 @@ fun LiveView(
         onCamera(cam)
         onDispose {
             tools?.stopRecording(ctx)
-            snapshot() // PixelCopy lee el surface antes de que se destruya el decodificador
+            snapshot() // leer el último cuadro antes de que se destruya el decodificador
             onCamera(null)
             YiP2p.close(cam)
             video.release()

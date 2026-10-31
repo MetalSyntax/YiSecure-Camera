@@ -14,6 +14,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.core.view.WindowCompat
 import com.metalsyntax.yihomelocal.data.Alert
 import com.metalsyntax.yihomelocal.data.CameraDevice
 import com.metalsyntax.yihomelocal.data.Snapshots
@@ -35,6 +37,13 @@ class MainActivity : ComponentActivity() {
         val store = Store(this)
 
         setContent {
+            var theme by remember { mutableIntStateOf(store.theme) }
+            Palette.light = when (theme) { 2 -> true; 1 -> false; else -> !isSystemInDarkTheme() }
+            SideEffect {
+                WindowCompat.getInsetsController(window, window.decorView).run {
+                    isAppearanceLightStatusBars = Palette.light; isAppearanceLightNavigationBars = Palette.light
+                }
+            }
             YiSecureTheme {
                 val scope = rememberCoroutineScope()
                 var session by remember { mutableStateOf(store.session) }
@@ -43,12 +52,19 @@ class MainActivity : ComponentActivity() {
                 var editing by remember { mutableStateOf<CameraDevice?>(null) }
                 var adding by remember { mutableStateOf(false) }
                 var tab by remember { mutableIntStateOf(0) }
+                var monitorFull by remember { mutableStateOf(false) }
                 var busy by remember { mutableStateOf(false) }
                 var error by remember { mutableStateOf<String?>(null) }
                 var online by remember { mutableStateOf<Map<String, Boolean?>>(emptyMap()) }
                 var snapshotVersion by remember { mutableIntStateOf(0) }
                 var recent by remember { mutableStateOf<List<Alert>?>(null) }
                 var lastUid by remember { mutableStateOf(store.lastCamera) }
+                // cámaras con PIN ya abiertas en esta ejecución de la app
+                var unlocked by remember { mutableStateOf(emptySet<String>()) }
+                var pinAsk by remember { mutableStateOf<Pair<CameraDevice, () -> Unit>?>(null) }
+                var pinVersion by remember { mutableIntStateOf(0) }
+                fun locked(c: CameraDevice) = pinVersion >= 0 && store.hasPin(c.uid) && c.uid !in unlocked
+                fun guarded(c: CameraDevice, action: () -> Unit) = if (locked(c)) pinAsk = c to action else action()
 
                 // estado real: pregunta a la red P2P por cada cámara al abrir la lista y cada minuto
                 val listVisible = session != null && selected == null && !adding
@@ -93,7 +109,7 @@ class MainActivity : ComponentActivity() {
                     recent = runCatching { withContext(Dispatchers.IO) { loadAlerts(YiCloud(store.region), ss) } }.getOrNull()
                 }
 
-                fun openLive(c: CameraDevice) { selected = c; lastUid = c.uid; store.lastCamera = c.uid }
+                fun openLive(c: CameraDevice) = guarded(c) { selected = c; lastUid = c.uid; store.lastCamera = c.uid }
                 fun closeLive() { selected = null; snapshotVersion++ }
 
                 BackHandler(enabled = selected != null || adding) { if (adding) adding = false else closeLive() }
@@ -101,29 +117,46 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize(), color = PitchBlack) {
                     val s = session
                     val cam = selected
+                    val edit = editing
                     when {
-                        s == null -> LoginScreen(store.region, busy, error) { account, password, region ->
+                        s == null -> LoginScreen(store.region, busy, error, store.savedAccount) { account, password, region, rememberMe ->
                             store.region = region
+                            store.savedAccount = if (rememberMe) account to password else null
                             cloudCall(login = { YiCloud(region).login(account, password) })
                         }
-                        adding -> AddCameraScreen(YiCloud(store.region), s, onBack = { adding = false }) { uid ->
+                        adding -> AddCameraScreen(YiCloud(store.region), s, store, onBack = { adding = false }) { uid ->
                             // recién vinculada: refrescar y abrir el diálogo para ponerle nombre
                             cloudCall(after = { adding = false; editing = cameras.firstOrNull { it.uid == uid } })
                         }
+                        edit != null -> edit.let { e ->
+                        EditCameraScreen(
+                            e, busy, store.hasPin(e.uid).also { pinVersion }, onBack = { editing = null },
+                            onPin = { pin -> store.setPin(e.uid, pin); unlocked = unlocked + e.uid; pinVersion++ },
+                            onRename = { name ->
+                                cloudCall(action = { c, ss -> c.rename(ss, e.uid, name) }, after = {
+                                    editing = null; selected = selected?.let { sel -> cameras.firstOrNull { it.uid == sel.uid } }
+                                })
+                            },
+                            onDelete = {
+                                cloudCall(action = { c, ss -> c.delete(ss, e.uid) }, after = {
+                                    Snapshots.delete(this@MainActivity, e.uid)
+                                    editing = null; if (selected?.uid == e.uid) selected = null
+                                })
+                            },
+                        )
+                    }
                         cam != null -> CameraDetailScreen(cam, store, YiCloud(store.region), s, onBack = { closeLive() }, onEdit = { editing = cam })
                         else -> Scaffold(
                             containerColor = PitchBlack,
                             bottomBar = {
-                                NavigationBar(containerColor = CardBackground) {
-                                    // "En vivo" abre la última cámara vista (o la primera); no es una pantalla aparte
+                                // el monitor a pantalla completa ocupa todo: sin barra de pestañas
+                                if (!(tab == 1 && monitorFull)) NavigationBar(containerColor = CardBackground) {
+                                    // "En vivo" = monitor con todas las cámaras a la vez
                                     listOf("CÁMARAS" to Icons.Default.GridView, "EN VIVO" to Icons.Default.Videocam,
                                         "EVENTOS" to Icons.Default.Notifications, "AJUSTES" to Icons.Default.Tune).forEachIndexed { i, (label, icon) ->
                                         NavigationBarItem(
                                             selected = tab == i,
-                                            onClick = {
-                                                if (i == 1) (cameras.firstOrNull { it.uid == lastUid } ?: cameras.firstOrNull())?.let(::openLive)
-                                                else tab = i
-                                            },
+                                            onClick = { tab = i },
                                             icon = { Icon(icon, null) }, label = { Text(label, fontSize = 11.sp) },
                                             colors = NavigationBarItemDefaults.colors(
                                                 selectedIconColor = CrimsonRed, selectedTextColor = CrimsonRed, indicatorColor = SurfaceHigh,
@@ -137,13 +170,14 @@ class MainActivity : ComponentActivity() {
                             Box(Modifier.padding(pad)) {
                                 if (tab == 0) HomeScreen(
                                     cameras, online, snapshotVersion, busy, error,
-                                    onSelectCamera = { openLive(it) }, onEditCamera = { editing = it },
+                                    onSelectCamera = { openLive(it) }, onEditCamera = { c -> guarded(c) { editing = c } },
                                     onAddCamera = { adding = true }, onRefresh = { online = emptyMap(); cloudCall() },
                                     recent = recent, onAllEvents = { tab = 2 },
-                                ) else if (tab == 2) EventsScreen(YiCloud(store.region), s, cameras)
+                                ) else if (tab == 1) MonitorScreen(cameras, monitorFull, { monitorFull = it }, ::locked) { openLive(it) }
+                                else if (tab == 2) EventsScreen(YiCloud(store.region), s, cameras)
                                 else SettingsScreen(
-                                    cameras, online, store.region,
-                                    onAddCamera = { adding = true }, onEditCamera = { editing = it },
+                                    cameras, online, store.region, theme, onTheme = { theme = it; store.theme = it },
+                                    onAddCamera = { adding = true }, onEditCamera = { c -> guarded(c) { editing = c } },
                                     onLogout = {
                                         store.session = null; store.cameras = emptyList()
                                         session = null; cameras = emptyList(); tab = 0
@@ -153,21 +187,10 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    editing?.let { e ->
-                        EditCameraDialog(
-                            e, busy, onDismiss = { editing = null },
-                            onRename = { name ->
-                                cloudCall(action = { c, ss -> c.rename(ss, e.uid, name) }, after = {
-                                    editing = null; selected = selected?.let { sel -> cameras.firstOrNull { it.uid == sel.uid } }
-                                })
-                            },
-                            onDelete = {
-                                cloudCall(action = { c, ss -> c.delete(ss, e.uid) }, after = {
-                                    Snapshots.delete(this@MainActivity, e.uid)
-                                    editing = null; if (selected?.uid == e.uid) selected = null
-                                })
-                            },
-                        )
+                    pinAsk?.let { (c, action) ->
+                        PinDialog(c, check = { store.checkPin(c.uid, it) }, onDismiss = { pinAsk = null }) {
+                            unlocked = unlocked + c.uid; pinAsk = null; action()
+                        }
                     }
                 }
             }

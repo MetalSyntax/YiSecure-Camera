@@ -68,6 +68,8 @@ dependencies {
     implementation(files("libs/yisdk.jar"))
     // QR de emparejamiento que lee la cámara
     implementation("com.google.zxing:core:3.5.3")
+    // leer la etiqueta QR pegada en la cámara (escáner de Google Play services: sin permiso de cámara)
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")

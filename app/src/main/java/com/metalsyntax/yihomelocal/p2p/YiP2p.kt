@@ -91,10 +91,61 @@ object YiP2p {
     /** Detección de persona en la cámara (setAlarmMode 1/0, rama humanMovingDetectionSupport de Yi Home). */
     suspend fun setPersonDetection(c: AntsCamera, on: Boolean) = cmd(c) { setAlarmMode(if (on) 1 else 0, it) }
 
+    /** Sonido anormal (llanto, golpes, alarmas): 2 encendido, 1 apagado. */
+    suspend fun setSoundDetection(c: AntsCamera, on: Boolean) = cmd(c) { setAbnormalSound(if (on) 2 else 1, it) }
+
+    /** Detección de llanto de bebé: 2 encendido, 1 apagado. */
+    suspend fun setBabyCry(c: AntsCamera, on: Boolean) = cmd(c) { setBabyCryingMode(if (on) 2 else 1, it) }
+
+    /**
+     * "Modo ventana" de Kami (CameraSettingFragment): detrás de un vidrio el IR y el LED se reflejan y la imagen
+     * queda blanca. Activar = LED apagado + IR apagado (setDayNight 2); desactivar = LED encendido + IR auto.
+     */
+    suspend fun setGlassMode(c: AntsCamera, on: Boolean): DeviceInfo? {
+        setLed(c, !on) ?: return null
+        return setNightVision(c, if (on) 2 else 1)
+    }
+
+    /** Ordena a la cámara bajar e instalar el firmware de [url] (IOCTRL 4866). El avance se lee en info().update_progress. */
+    suspend fun upgrade(c: AntsCamera, url: String) = cmd(c) { doSendUpgradeCommand(url, it) }
+
+    /** Tramo grabado en la microSD: inicio (epoch ms, hora local de la cámara = la del teléfono) y duración. */
+    data class SdClip(val start: Long, val seconds: Int) { val end get() = start + seconds * 1000L }
+
+    /**
+     * Grabaciones de la microSD entre [from] y [to] (epoch ms). TNP = IOCTRL 9031, TUTK = 792 (getEvents del SDK).
+     * La petición va en hora GMT y la respuesta en hora local: quien llame debe pedir con un día de margen.
+     */
+    suspend fun sdClips(c: AntsCamera, from: Long, to: Long): List<SdClip>? = withTimeoutOrNull(15_000) {
+        suspendCancellableCoroutine { k ->
+            c.commandHelper.getEvents(from, to, object : CameraCommandHelper.OnGetEventsCommandResponse {
+                override fun onEvents(list: MutableList<com.tutk.IOTC.EventInfo>?, n: Int) {
+                    if (k.isActive) k.resume(list.orEmpty().map { SdClip(it.sTimeDay?.timeInMillis ?: it.startTime, it.length) }.sortedBy { it.start })
+                }
+                override fun onError(i: Int) { if (k.isActive) k.resume(null) }
+            })
+        }
+    }
+
+    /** Reproduce la microSD desde [ms] (epoch ms) en la misma conexión; [goLive] vuelve al vivo. */
+    fun playSd(c: AntsCamera, ms: Long) = c.seekTo(ms)
+
+    fun goLive(c: AntsCamera) = c.goLive()
+
     /** Hablar: modo 0 = AAC sin cancelación de eco (no usa MobileAEC). Necesita libVoAACEncoder.so. */
     fun startTalk(c: AntsCamera) { System.loadLibrary("VoAACEncoder"); c.startSpeaking(0) }
 
     fun stopTalk(c: AntsCamera) = c.stopSpeaking()
+
+    /**
+     * Intercomunicador manos libres (botón "llamada" de Kami): modo 1 = AAC con cancelación de eco MobileAEC
+     * (libwebrtc_apm) y se escucha la cámara a la vez.
+     */
+    fun startIntercom(c: AntsCamera) {
+        listOf("c++_shared", "webrtc_audio_preprocessing", "webrtc_apm", "VoAACEncoder").forEach(System::loadLibrary)
+        setAudio(c, true)
+        c.startSpeaking(1)
+    }
 
     fun setAudio(c: AntsCamera, on: Boolean) {
         c.setEnableListening(on)

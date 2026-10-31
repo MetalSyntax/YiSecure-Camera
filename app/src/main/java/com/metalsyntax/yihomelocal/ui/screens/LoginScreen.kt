@@ -13,6 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import com.metalsyntax.yihomelocal.ui.components.PasswordEye
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.metalsyntax.yihomelocal.data.YiCloud
@@ -27,10 +29,13 @@ fun LoginScreen(
     region: String,
     busy: Boolean,
     error: String?,
-    onLogin: (account: String, password: String, region: String) -> Unit,
+    saved: Pair<String, String>?,
+    onLogin: (account: String, password: String, region: String, remember: Boolean) -> Unit,
 ) {
-    var account by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var account by remember { mutableStateOf(saved?.first.orEmpty()) }
+    var password by remember { mutableStateOf(saved?.second.orEmpty()) }
+    var rememberMe by remember { mutableStateOf(saved != null) }
+    var shown by remember { mutableStateOf(false) }
     var reg by remember { mutableStateOf(region) }
     var settingPassword by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf<String?>(null) }
@@ -62,15 +67,19 @@ fun LoginScreen(
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(
             value = password, onValueChange = { password = it }, label = { Text("Contraseña") }, singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
+            visualTransformation = if (shown) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = { PasswordEye(shown) { shown = !shown } },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth(),
         )
-        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth().clickable { rememberMe = !rememberMe }, verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(rememberMe, { rememberMe = it }, colors = CheckboxDefaults.colors(checkedColor = CrimsonRed))
+            Text("Recordar correo y contraseña", color = MutedText, fontSize = 13.sp)
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("us" to "América", "eu" to "Europa", "sg" to "Asia").forEach { (k, label) ->
                 FilterChip(
                     selected = reg == k, onClick = { reg = k }, label = { Text(label) },
-                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = CrimsonRed, selectedLabelColor = PureWhite),
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = CrimsonRed, selectedLabelColor = OnAccent),
                 )
             }
         }
@@ -84,14 +93,14 @@ fun LoginScreen(
         }
         Spacer(Modifier.height(24.dp))
         Button(
-            onClick = { onLogin(account, password, reg) },
+            onClick = { onLogin(account, password, reg, rememberMe) },
             enabled = !busy && account.isNotEmpty() && password.isNotEmpty(),
             colors = ButtonDefaults.buttonColors(containerColor = CrimsonRed),
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            if (busy) CircularProgressIndicator(color = PureWhite, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-            else Text("Entrar", color = PureWhite)
+            if (busy) CircularProgressIndicator(color = OnAccent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+            else Text("Entrar", color = OnAccent)
         }
         TextButton(onClick = { settingPassword = true }) {
             Text("¿Entras con Google o no tienes contraseña? Crear contraseña", color = MutedText, fontSize = 12.sp)
@@ -158,16 +167,18 @@ private fun PasswordSetup(initialAccount: String, region: String, onCancel: () -
                 enabled = !busy && account.isNotEmpty() && captchaText.isNotEmpty() && captcha != null,
                 colors = ButtonDefaults.buttonColors(containerColor = CrimsonRed), shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Enviar código al correo", color = PureWhite) }
+            ) { Text("Enviar código al correo", color = OnAccent) }
         } else {
             OutlinedTextField(
                 value = emailCode, onValueChange = { emailCode = it.trim() }, label = { Text("Código del correo") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(12.dp))
+            var shownNew by remember { mutableStateOf(false) }
             OutlinedTextField(
                 value = newPassword, onValueChange = { newPassword = it }, label = { Text("Contraseña nueva") }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
+                visualTransformation = if (shownNew) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = { PasswordEye(shownNew) { shownNew = !shownNew } },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(20.dp))
@@ -176,7 +187,7 @@ private fun PasswordSetup(initialAccount: String, region: String, onCancel: () -
                 enabled = !busy && emailCode.isNotEmpty() && newPassword.length >= 8,
                 colors = ButtonDefaults.buttonColors(containerColor = CrimsonRed), shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Guardar contraseña", color = PureWhite) }
+            ) { Text("Guardar contraseña", color = OnAccent) }
         }
         if (msg != null) {
             Spacer(Modifier.height(12.dp))

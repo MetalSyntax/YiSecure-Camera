@@ -33,6 +33,37 @@ class Store(ctx: Context) {
         get() = p.getBoolean("audio", false)
         set(v) = p.edit().putBoolean("audio", v).apply()
 
+    /** 0 = según el sistema, 1 = oscuro, 2 = claro. */
+    var theme: Int
+        get() = p.getInt("theme", 0)
+        set(v) = p.edit().putInt("theme", v).apply()
+
+    /** Pantalla de inicio en mosaico (monitor de seguridad) en vez de lista. */
+    var monitor: Boolean
+        get() = p.getBoolean("monitor", true)
+        set(v) = p.edit().putBoolean("monitor", v).apply()
+
+    /** Login recordado (vacío = no recordar). En claro dentro de las preferencias privadas, igual que el token. */
+    var savedAccount: Pair<String, String>?
+        get() = p.getString("saved_account", null)?.let { it to p.getString("saved_password", "")!! }
+        set(v) = p.edit().apply {
+            if (v == null) remove("saved_account").remove("saved_password")
+            else putString("saved_account", v.first).putString("saved_password", v.second)
+        }.apply()
+
+    // claves Wi-Fi usadas al emparejar, por SSID
+    fun wifiPassword(ssid: String) = p.getString("wifi_$ssid", null)
+    fun setWifiPassword(ssid: String, pwd: String) = p.edit().putString("wifi_$ssid", pwd).apply()
+
+    /** PIN por cámara guardado como SHA-256 (con el uid como sal); null = sin PIN. */
+    fun hasPin(uid: String) = p.contains("pin_$uid")
+    fun checkPin(uid: String, pin: String) = p.getString("pin_$uid", null) == pinHash(uid, pin)
+    fun setPin(uid: String, pin: String?) = p.edit().apply {
+        if (pin == null) remove("pin_$uid") else putString("pin_$uid", pinHash(uid, pin))
+    }.apply()
+    private fun pinHash(uid: String, pin: String) =
+        java.security.MessageDigest.getInstance("SHA-256").digest("$uid:$pin".toByteArray()).joinToString("") { "%02x".format(it) }
+
     // el giro vive en la cámara; esto solo recuerda el último valor que le mandamos
     fun flipped(uid: String) = p.getBoolean("flip_$uid", false)
     fun setFlipped(uid: String, v: Boolean) = p.edit().putBoolean("flip_$uid", v).apply()

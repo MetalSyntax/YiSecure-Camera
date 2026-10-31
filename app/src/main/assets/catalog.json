@@ -1,0 +1,212 @@
+[
+ {
+  "model": "b600ap",
+  "name": "YI 2K Outdoor Dome Camera",
+  "category": "Exterior",
+  "image": "choose_camera_type_b600ap"
+ },
+ {
+  "model": "h30",
+  "name": "YI Outdoor Camera 1080p",
+  "category": "Exterior",
+  "image": "choose_camera_type_g8"
+ },
+ {
+  "model": "h31",
+  "name": "Kami Outdoor Security Camera",
+  "category": "Exterior",
+  "image": "choose_camera_type_h31"
+ },
+ {
+  "model": "r40ga",
+  "name": "YI 1080p Outdoor PTZ Camera",
+  "category": "Exterior",
+  "image": "choose_camera_type_r40ga"
+ },
+ {
+  "model": "b621",
+  "name": "YI Outdoor 2K Pro Camera",
+  "category": "Exterior",
+  "image": "yh_device_camera_b621"
+ },
+ {
+  "model": "g33",
+  "name": "YI 4G Battery Camera",
+  "category": "Exterior",
+  "image": "choose_camera_type_g33"
+ },
+ {
+  "model": "y625",
+  "name": "YI Home MAX Camera",
+  "category": "Interior",
+  "image": "choose_camera_type_y625"
+ },
+ {
+  "model": "y623",
+  "name": "YI Pro",
+  "category": "Interior",
+  "image": "choose_camera_type_y623"
+ },
+ {
+  "model": "r44a",
+  "name": "Kami Fall Detect Camera",
+  "category": "Interior",
+  "image": "choose_camera_type_r44a"
+ },
+ {
+  "model": "r37gb",
+  "name": "YI Dome Guard Smart IP PTZ Camera",
+  "category": "Interior",
+  "image": "choose_camera_type_r37gb"
+ },
+ {
+  "model": "l101",
+  "name": "YI 2K Light Bulb Security Camera",
+  "category": "Interior",
+  "image": "choose_camera_type_l101"
+ },
+ {
+  "model": "ball",
+  "name": "YI Dual-Lens Indoor Camera",
+  "category": "Interior",
+  "image": "choose_camera_type_ball"
+ },
+ {
+  "model": "yunyi.camera.v1",
+  "name": "YI Home Camera",
+  "category": "Interior",
+  "image": "choose_camera_type_g1"
+ },
+ {
+  "model": "yunyi.camera.y20",
+  "name": "YI 1080p Home Camera",
+  "category": "Interior",
+  "image": "choose_camera_type_g6"
+ },
+ {
+  "model": "y28ga",
+  "name": "Kami Mini Camera",
+  "category": "Interior",
+  "image": "choose_camera_type_y28ga"
+ },
+ {
+  "model": "yunyi.camera.htwo1",
+  "name": "YI 1080p Home Camera",
+  "category": "Interior",
+  "image": "choose_camera_type_g2"
+ },
+ {
+  "model": "y25",
+  "name": "YI Home Camera 3",
+  "category": "Interior",
+  "image": "choose_camera_type_y25"
+ },
+ {
+  "model": "y10",
+  "name": "YI Home Camera Cloud Edition",
+  "category": "Interior",
+  "image": "choose_camera_type_g7"
+ },
+ {
+  "model": "h19",
+  "name": "YI Dome Camera",
+  "category": "Interior",
+  "image": "choose_camera_type_g3"
+ },
+ {
+  "model": "h20",
+  "name": "YI 1080p Dome Camera",
+  "category": "Interior",
+  "image": "choose_camera_type_h20"
+ },
+ {
+  "model": "y19",
+  "name": "YI-Cloud Dome Camera 1080p",
+  "category": "Interior",
+  "image": "choose_camera_type_g9"
+ },
+ {
+  "model": "y30",
+  "name": "YI Dome X",
+  "category": "Interior",
+  "image": "choose_camera_type_y30"
+ },
+ {
+  "model": "y32",
+  "name": "Kami Indoor Camera",
+  "category": "Interior",
+  "image": "choose_camera_type_y32"
+ },
+ {
+  "model": "p301",
+  "name": "YI 2K Pan-Tilt Outdoor Solar Camera",
+  "category": "Inalámbricas (batería)",
+  "image": "choose_camera_type_p301"
+ },
+ {
+  "model": "w10",
+  "name": "Kami Wire-Free Camera",
+  "category": "Inalámbricas (batería)",
+  "image": "choose_camera_type_w10"
+ },
+ {
+  "model": "n10",
+  "name": "Kami Smart Security Base Station",
+  "category": "Estación base",
+  "image": "choose_camera_type_n10"
+ },
+ {
+  "model": "w102",
+  "name": "Kami Wire-Free Outdoor Camera",
+  "category": "Inalámbricas (batería)",
+  "image": "choose_camera_type_w102"
+ },
+ {
+  "model": "w12ga",
+  "name": "Kami Wire-Free Outdoor Camera 2",
+  "category": "Inalámbricas (batería)",
+  "image": "choose_camera_type_w12ga"
+ },
+ {
+  "model": "r30gb",
+  "name": "YI Dome Guard",
+  "category": "Interior",
+  "image": "choose_camera_type_r30gb"
+ },
+ {
+  "model": "h50ga",
+  "name": "YI Dome U",
+  "category": "Interior",
+  "image": "choose_camera_type_h50ga"
+ },
+ {
+  "model": "h52ga",
+  "name": "YI Dome U",
+  "category": "Interior",
+  "image": "choose_camera_type_h52ga"
+ },
+ {
+  "model": "y501c",
+  "name": "Kami Baby Monitor",
+  "category": "Interior",
+  "image": "y501_final_rabbit_front"
+ },
+ {
+  "model": "d201",
+  "name": "Kami Doorbell Camera",
+  "category": "Interior",
+  "image": "choose_camera_type_d201"
+ },
+ {
+  "model": "h60ga",
+  "name": "YI Dome U Camera Pro",
+  "category": "Interior",
+  "image": "choose_camera_type_h60ga"
+ },
+ {
+  "model": "common",
+  "name": "Otro modelo / genérico",
+  "category": "Otras",
+  "image": "choose_camera_type_common"
+ }
+]

@@ -129,6 +129,24 @@ class YiCloud(private val region: String) {
             "seq" to "1", "userid" to s.userId, "uid" to uid, "pushflag" to if (on) "1" else "0", "uploadflag" to "1"), "PUT")
     }
 
+    data class Firmware(val needUpdate: Boolean, val version: String, val notes: String, val url: String)
+
+    /**
+     * ¿Hay firmware nuevo? GET sin firma a api.*.xiaoyi.com/vmanager/upgrade (kc.d.a0 de Kami Home).
+     * sname = rama de firmware del modelo (feature_config), protocol = servidor según región.
+     */
+    fun firmware(uid: String, model: String, current: String): Firmware {
+        val host = when (region) { "us" -> "api.us.xiaoyi.com"; "eu" -> "api.eu.xiaoyi.com"; else -> "api.xiaoyi.com.tw" }
+        val protocol = when (region) { "us" -> "mius"; "eu" -> "mieu"; else -> "aws" }
+        val branch = "familymonitor-" + (FIRMWARE_BRANCH[model] ?: model)
+        val q = linkedMapOf("version" to current, "uid" to uid, "sname" to branch, "protocol" to protocol)
+            .entries.joinToString("&") { "${it.key}=${URLEncoder.encode(it.value, "UTF-8")}" }
+        val o = JSONObject(fetch("https://$host/vmanager/upgrade?$q").decodeToString())
+        if (o.optInt("code") != 20000) throw ApiException(o.optInt("code"))
+        val r = o.optJSONObject("result") ?: o
+        return Firmware(r.optString("needUpdate") == "true", r.optString("version"), r.optString("message"), r.optString("downloadPath"))
+    }
+
     private fun tnpInfo(s: Session, uid: String): JSONObject =
         signedGet(s, "/v4/tnp/device_info", linkedMapOf("seq" to "1", "userid" to s.userId, "uid" to uid))
             .getJSONObject("data")
@@ -181,6 +199,9 @@ class YiCloud(private val region: String) {
             fun b64(v: String) = String(com.xiaoyi.camera.util.Base64.encode(v.toByteArray()))
             return "b=$bindKey&s=${b64(ssid)}&p=${b64(xor)}"
         }
+
+        // modelos cuya rama de firmware no es familymonitor-<modelo> (assets/feature_config de Kami Home 4.9.9)
+        private val FIRMWARE_BRANCH = mapOf("y30ga" to "y30qa", "y501c" to "y501gc", "y502c" to "y502gc")
 
         private val PAIR_XOR = com.metalsyntax.yihomelocal.BuildConfig.YI_PAIR_XOR
 

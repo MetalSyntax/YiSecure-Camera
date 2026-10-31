@@ -1,5 +1,5 @@
 #!/bin/bash
-# Extrae de la app Yi Home instalada en TU teléfono (o de sus APK) lo que el proyecto necesita y no está en git:
+# Extrae de la app Kami Home (o Yi Home) instalada en TU teléfono (o de sus APK) lo que el proyecto necesita y no está en git:
 #   app/libs/yisdk.jar                      SDK P2P de Yi (com.tnp, com.tutk, com.p2p, com.xiaoyi.camera + lo que usan)
 #   app/src/main/jniLibs/arm64-v8a/*.so     librerías nativas TNP/TUTK, VoAACEncoder para "Hablar"
 #   yi.properties                           clave HMAC del login de la API de Yi y tabla XOR del QR
@@ -9,10 +9,11 @@
 #   tools/extract_sdk.sh base.apk split_config.arm64_v8a.apk    # desde APK ya descargados
 #
 # Requiere: adb (solo modo teléfono), d2j-dex2jar (brew install dex2jar), JDK 17+ (jar, jdeps), unzip.
-# Probado con Yi Home 6.9.9 (com.ants360.yicamera.international).
+# Probado con Kami Home 4.9.9 (com.yitechnology.kamihome) y Yi Home 6.9.9 (com.ants360.yicamera.international):
+# mismo SDK, misma nube (gw-*.xiaoyi.com) y misma clave de login. Si están las dos se usa Kami (SDK más nuevo).
 set -euo pipefail
 
-PKG=com.ants360.yicamera.international
+PKGS="com.yitechnology.kamihome com.ants360.yicamera.international"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -30,13 +31,20 @@ else
   ADB="${ADB:-$(command -v adb || echo "$HOME/Library/Android/sdk/platform-tools/adb")}"
   [ -x "$ADB" ] || { echo "No encuentro adb. Pasa los APK como argumentos o define ADB=/ruta/adb" >&2; exit 1; }
   # --user 0: en teléfonos con espacio clonado (user 999) pm sin usuario falla
-  paths="$("$ADB" shell pm path --user 0 "$PKG" | tr -d '\r' | sed 's/^package://')"
-  [ -n "$paths" ] || { echo "Yi Home ($PKG) no está instalada en el teléfono conectado" >&2; exit 1; }
+  paths=""
+  for PKG in $PKGS; do
+    paths="$("$ADB" shell pm path --user 0 "$PKG" 2>/dev/null | tr -d '\r' | sed 's/^package://' || true)"
+    [ -n "$paths" ] && break
+  done
+  [ -n "$paths" ] || { echo "Ni Kami Home ni Yi Home están instaladas en el teléfono conectado" >&2; exit 1; }
   ver="$("$ADB" shell dumpsys package "$PKG" | tr -d '\r' | grep -m1 versionName | sed 's/.*=//' || true)"
-  echo "Yi Home $ver encontrada en el teléfono"
+  echo "$PKG $ver encontrada en el teléfono"
   "$ADB" pull "$(grep '/base.apk$' <<<"$paths")" "$WORK/base.apk" >/dev/null
   "$ADB" pull "$(grep 'split_config.arm64_v8a.apk$' <<<"$paths")" "$WORK/arm64.apk" >/dev/null \
     || { echo "No hay split arm64 (¿teléfono de 32 bits?)" >&2; exit 1; }
+  # imágenes de modelos (opcional): están en el split de densidad
+  dpi="$(grep -E 'split_config\.[a-z]*dpi\.apk$' <<<"$paths" | head -1 || true)"
+  [ -n "$dpi" ] && "$ADB" pull "$dpi" "$WORK/dpi.apk" >/dev/null || true
 fi
 
 # ---------- 2. dex → jar ----------
@@ -75,7 +83,8 @@ cp "$WORK/yisdk.jar" "$ROOT/app/libs/yisdk.jar"
 # ---------- 4. librerías nativas ----------
 JNI="$ROOT/app/src/main/jniLibs/arm64-v8a"
 mkdir -p "$JNI"
-for l in PPPP_API IOTCAPIs AVAPIs sCHL VoAACEncoder; do
+# webrtc_apm (+ audio_preprocessing, c++_shared) = MobileAEC: cancelación de eco del intercomunicador full-dúplex
+for l in PPPP_API IOTCAPIs AVAPIs sCHL VoAACEncoder webrtc_apm webrtc_audio_preprocessing c++_shared; do
   unzip -qjo "$WORK/arm64.apk" "lib/arm64-v8a/lib$l.so" -d "$JNI"
 done
 
@@ -89,4 +98,15 @@ xor=$(strings -n 70 "$WORK"/dex/classes*.dex | grep -E '^.?[A-Za-z0-9]{70}$' | g
 [ "$(wc -l <<<"$xor" | tr -d ' ')" = 1 ] && [ -n "$xor" ] || { echo "No encontré la tabla XOR del QR (¿otra versión de Yi Home?)" >&2; exit 1; }
 echo "YI_PAIR_XOR=$xor" >> "$ROOT/yi.properties"
 
-echo "Listo: app/libs/yisdk.jar ($(du -h "$ROOT/app/libs/yisdk.jar" | cut -f1)), $(ls "$JNI" | wc -l | tr -d ' ') .so, yi.properties"
+# ---------- 7. imágenes del catálogo de modelos (assets/catalog.json → assets/models/*.png) ----------
+MODELS="$ROOT/app/src/main/assets/models"
+mkdir -p "$MODELS"
+for img in $(grep -oE '"image": "[^"]+"' "$ROOT/app/src/main/assets/catalog.json" | cut -d'"' -f4); do
+  for a in "$WORK/dpi.apk" "$WORK/base.apk"; do
+    [ -f "$a" ] || continue
+    f=$(unzip -Z1 "$a" 2>/dev/null | grep -E "^res/drawable[^/]*/$img\.(png|webp)$" | sort -r | head -1 || true)
+    [ -n "$f" ] && { unzip -p "$a" "$f" > "$MODELS/$img.${f##*.}"; break; }
+  done
+done
+
+echo "Listo: app/libs/yisdk.jar ($(du -h "$ROOT/app/libs/yisdk.jar" | cut -f1)), $(ls "$JNI" | wc -l | tr -d ' ') .so, $(ls "$MODELS" | wc -l | tr -d ' ') imágenes, yi.properties"

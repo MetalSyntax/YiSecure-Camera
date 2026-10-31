@@ -123,7 +123,7 @@ fun AlertRow(a: Alert, camName: String, onClick: () -> Unit) {
         Box(Modifier.size(96.dp, 54.dp).clip(RoundedCornerShape(4.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
             img?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                 ?: Icon(Icons.Default.Videocam, null, tint = BorderStrong)
-            if (a.videoUrl.isNotEmpty()) Icon(Icons.Default.PlayArrow, "Tiene clip", tint = PureWhite, modifier = Modifier.align(Alignment.BottomEnd).size(18.dp))
+            if (a.videoUrl.isNotEmpty()) Icon(Icons.Default.PlayArrow, "Tiene clip", tint = OnAccent, modifier = Modifier.align(Alignment.BottomEnd).size(18.dp))
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -189,5 +189,5 @@ private fun Chip(text: String, selected: Boolean, onClick: () -> Unit) {
             .background(if (selected) CrimsonRed else CardBackground)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
-    ) { Mono(text, if (selected) PureWhite else MutedText, 11.sp) }
+    ) { Mono(text, if (selected) OnAccent else MutedText, 11.sp) }
 }

@@ -135,12 +135,12 @@ private fun CameraCard(camera: CameraDevice, on: Boolean?, snapshotVersion: Int,
                 StatusBadge(on == true, when (on) { null -> "VERIFICANDO"; true -> "EN LÍNEA"; false -> "DESCONECTADA" })
             }
             if (snap != null) Mono(
-                "ÚLTIMA IMAGEN · " + SimpleDateFormat("dd/MM HH:mm", Locale.US).format(Date(snap.second)), PureWhite, 10.sp,
+                "ÚLTIMA IMAGEN · " + SimpleDateFormat("dd/MM HH:mm", Locale.US).format(Date(snap.second)), OnAccent, 10.sp,
                 Modifier.align(Alignment.BottomStart).padding(10.dp).clip(RoundedCornerShape(2.dp))
                     .background(Color.Black.copy(alpha = 0.85f)).padding(horizontal = 6.dp, vertical = 3.dp),
             )
             Mono(
-                camera.model.ifEmpty { "YI" }.uppercase(), PureWhite, 10.sp,
+                camera.model.ifEmpty { "YI" }.uppercase(), OnAccent, 10.sp,
                 Modifier.align(Alignment.TopEnd).padding(10.dp).clip(RoundedCornerShape(2.dp))
                     .background(Color.Black.copy(alpha = 0.8f)).padding(horizontal = 6.dp, vertical = 3.dp),
             )
