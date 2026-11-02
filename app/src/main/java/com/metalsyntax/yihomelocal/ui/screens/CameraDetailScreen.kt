@@ -84,6 +84,8 @@ fun CameraDetailScreen(
     cameras: List<CameraDevice> = listOf(camera), onSwitch: (CameraDevice) -> Unit = {},
     /** Pánico: empezar a grabar MP4 en cuanto llegue el video. */
     autoRecord: Boolean = false,
+    /** Abrir reproduciendo la microSD desde esta hora (epoch ms), p. ej. desde un evento. */
+    sdStart: Long? = null,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -164,7 +166,7 @@ fun CameraDetailScreen(
             dets = d + motion
             if (found.isNotEmpty()) {
                 val shown = dets
-                withContext(Dispatchers.IO) { found.forEach { LocalEvents.add(ctx, camera.uid, now, it, bmp, shown) } }
+                withContext(Dispatchers.IO) { found.forEach { LocalEvents.add(ctx, camera.uid, now, it, bmp, shown, sc.night) } }
                 events = LocalEvents.list(ctx, camera.uid)
             }
         }
@@ -198,6 +200,15 @@ fun CameraDetailScreen(
         }
     }
 
+    var sdStarted by remember { mutableStateOf(false) }
+    LaunchedEffect(live) {
+        val c = cam
+        if (sdStart != null && live && !sdStarted && c != null) {
+            delay(1500); sdStarted = true
+            val at = sdStart - 5_000
+            YiP2p.playSd(c, at); sdAt = at; frameSec = 0
+        }
+    }
     var autoStarted by remember { mutableStateOf(false) }
     LaunchedEffect(live) {
         if (autoRecord && live && !autoStarted && !recording) {
@@ -447,11 +458,15 @@ fun CameraDetailScreen(
         }
     }
 
-    openAlert?.let { a -> AlertDetailDialog(a, camera.name) { openAlert = null } }
+    openAlert?.let { a ->
+        AlertDetailDialog(a, camera.name, onSd = if (cam != null) {
+            { cam?.let { YiP2p.playSd(it, a.time - 5_000); sdAt = a.time - 5_000; frameSec = 0 }; openAlert = null }
+        } else null) { openAlert = null }
+    }
     openEvent?.let { e ->
         LocalEventDialog(e, camera.name, onDismiss = { openEvent = null }, onSd = if (cam != null) {
             { cam?.let { YiP2p.playSd(it, e.time - 5_000); sdAt = e.time - 5_000; frameSec = 0 }; openEvent = null }
-        } else null)
+        } else null, onFav = { events = LocalEvents.list(ctx, camera.uid) })
     }
 }
 
@@ -605,12 +620,22 @@ private fun VideoButtonFlat(icon: ImageVector, desc: String, onClick: () -> Unit
 
 /** Foto del evento de IA en grande; si la cámara tiene microSD se puede saltar a ese momento. */
 @Composable
-fun LocalEventDialog(e: LocalEvent, camName: String, onDismiss: () -> Unit, onSd: (() -> Unit)?) {
+fun LocalEventDialog(e0: LocalEvent, camName: String, onDismiss: () -> Unit, onSd: (() -> Unit)?, onFav: (LocalEvent) -> Unit = {}) {
+    val ctx0 = LocalContext.current
+    var e by remember(e0.file) { mutableStateOf(e0) }
     val img = remember(e.file) { runCatching { BitmapFactory.decodeFile(e.file) }.getOrNull() }
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.padding(16.dp).fillMaxWidth().panel().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(e.title, color = PureWhite, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-            Mono("$camName · " + SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.US).format(Date(e.time)), MutedText, 10.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(e.title, color = PureWhite, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                // favorito: no se borra al rotar los 100 eventos por cámara
+                IconButton(onClick = { e = LocalEvents.setFav(ctx0, e, !e.fav); onFav(e) }) {
+                    Icon(if (e.fav) Icons.Default.Star else Icons.Default.StarBorder, if (e.fav) "Quitar de favoritos" else "Guardar en favoritos",
+                        tint = if (e.fav) CrimsonRed else MutedText)
+                }
+            }
+            Mono("$camName · " + SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.US).format(Date(e.time)) +
+                (if (e.score > 0) " · confianza ${(e.score * 100).toInt()} %" else "") + (if (e.night) " · IR nocturno" else ""), MutedText, 10.sp)
             Text(e.desc, color = MutedText, fontSize = 13.sp)
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
                 img?.let { androidx.compose.foundation.Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }

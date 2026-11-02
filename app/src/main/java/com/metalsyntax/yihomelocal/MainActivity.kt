@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
                 var profile by remember { mutableStateOf(store.profile) }
                 var profileBusy by remember { mutableStateOf(false) }
                 var autoRecord by remember { mutableStateOf(false) }
+                var sdStart by remember { mutableStateOf<Long?>(null) }
                 fun applyProfile(p: com.metalsyntax.yihomelocal.data.Profile, after: () -> Unit = {}) {
                     profileBusy = true
                     scope.launch {
@@ -180,8 +181,8 @@ class MainActivity : ComponentActivity() {
                     }
                         // key: al cambiar de cámara desde el desplegable se reinicia todo el estado de la pantalla
                         cam != null -> key(cam.uid) {
-                            CameraDetailScreen(cam, store, YiCloud(store.region), s, onBack = { autoRecord = false; closeLive() }, onEdit = { editing = cam },
-                                cameras = cameras, onSwitch = { autoRecord = false; openLive(it) }, autoRecord = autoRecord)
+                            CameraDetailScreen(cam, store, YiCloud(store.region), s, onBack = { autoRecord = false; sdStart = null; closeLive() }, onEdit = { editing = cam },
+                                cameras = cameras, onSwitch = { autoRecord = false; sdStart = null; openLive(it) }, autoRecord = autoRecord, sdStart = sdStart)
                         }
                         else -> Scaffold(
                             containerColor = PitchBlack,
@@ -222,7 +223,9 @@ class MainActivity : ComponentActivity() {
                                         cameras.associate { c -> c.uid to (com.metalsyntax.yihomelocal.data.LocalEvents.list(this@MainActivity, c.uid).maxOfOrNull { it.time } ?: 0L) }
                                     },
                                 ) else if (tab == 1) MonitorScreen(cameras, monitorFull, { monitorFull = it }, ::locked) { openLive(it) }
-                                else if (tab == 2) EventsScreen(YiCloud(store.region), s, cameras)
+                                else if (tab == 2) EventsScreen(YiCloud(store.region), s, cameras, onOpenSd = { uid, t ->
+                                    cameras.firstOrNull { it.uid == uid }?.let { c -> sdStart = t; openLive(c) }
+                                })
                                 else SettingsScreen(
                                     cameras, online, store.region, theme, onTheme = { theme = it; store.theme = it },
                                     onAddCamera = { adding = true }, onEditCamera = { c -> guarded(c) { editing = c } },

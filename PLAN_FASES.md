@@ -30,7 +30,7 @@ Reglas:
 | 2.2 | **Modo silencioso global**: apaga/enciende el push de todas las cámaras (`/v5/alert/push_prop`, afecta también a Kami/Yi Home) y los avisos de la app. Al salir no avisa lo ocurrido en silencio. | Nube | hecho (sin probar) |
 | 2.3 | Barra de **acciones rápidas** en Cámaras: Hablar (abre la cámara principal), Monitor, Silenciosa, Eventos. Sin "Captura" directa ni "Abrir" (necesitan P2P abierto / no hay cerradura). | App | hecho (sin probar) |
 
-## Fase 3 — Pantalla Cámaras como el diseño (0.6.0, instalada, sin probar)
+## Fase 3 — Pantalla Cámaras como el diseño (0.6.0, probada)
 
 | # | Tarea | Origen | Estado |
 |---|-------|--------|--------|
@@ -40,15 +40,15 @@ Reglas:
 | 3.4 | **Etiquetas por miniatura**: ALERTA (<10 min), PRIVACIDAD, IR ACTIVO, SD 24H / SD EVENTOS (último estado leído por P2P, data/CameraStatus.kt). | App + SDK | hecho |
 | 3.5 | **IA: mascotas** — sin "paquete" (COCO no tiene caja; sillas salían como paquete). Gato/Perro/Ave con confianza mínima 0,55–0,6, descarte de cajas >80 % del cuadro, eventos "Gato detectado", "en movimiento", "solo en casa" (>60 s sin personas). | App | hecho |
 
-## Fase 4 — Eventos completos
+## Fase 4 — Eventos completos (0.7.0)
 
-| # | Tarea | Origen |
-|---|-------|--------|
-| 4.1 | Etiquetas de confianza sobre las cajas en las tarjetas ("PERSONA #01 · 98 %", id de seguimiento). | App |
-| 4.2 | Estilo nocturno IR en eventos de noche (badge "MOVIMIENTO NOCTURNO"). | App |
-| 4.3 | Acción "Ver en la microSD" también desde eventos de la nube (saltar a esa hora en el NVR). | App + SDK |
-| 4.4 | Guardar evento en favoritos (no se borra al rotar los 100 por cámara). | App |
-| 4.5 | **Filtro "Mascotas"** en Eventos y resumen diario por mascota (veces visto, último lugar). Afinar con un modelo de mascotas si EfficientDet confunde gato/perro. | App |
+| # | Tarea | Origen | Estado |
+|---|-------|--------|--------|
+| 4.1 | Etiquetas sobre las cajas "PERSONA #01 · 96%", "GATO #01 · 81%" (numeradas por tipo) y confianza + objeto en la tarjeta. Solo en eventos nuevos (los viejos no guardaban esos datos). | App | hecho |
+| 4.2 | Eventos de noche (cámara en IR): badge "IR NOCTURNO", tipo en rojo oscuro "… NOCTURNO" y "N NOCTURNO" en el encabezado del día. | App | hecho |
+| 4.3 | "Ver en la microSD" desde Eventos (nube e IA) y desde las alertas del vivo: abre la cámara y reproduce 5 s antes. | App + SDK | hecho |
+| 4.4 | Favoritos ⭐ en eventos de la IA (no se borran al rotar los 100), filtro FAVORITOS; alertas de la nube → "Guardar en galería" (imagen o clip), porque la nube las borra a los pocos días. | App | hecho |
+| 4.5 | Filtro MASCOTA con **resumen por mascota** (veces vista, última hora y cámara). Pendiente: modelo de mascotas si EfficientDet confunde gato/perro. | App | hecho (modelo pendiente) |
 
 ## Fase 5 — microSD / NVR
 

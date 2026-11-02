@@ -66,7 +66,11 @@ fun loadAlerts(cloud: YiCloud, s: YiCloud.Session): List<Alert> {
 }
 
 @Composable
-fun EventsScreen(cloud: YiCloud, session: YiCloud.Session, cameras: List<CameraDevice>) {
+fun EventsScreen(
+    cloud: YiCloud, session: YiCloud.Session, cameras: List<CameraDevice>,
+    /** Abre la cámara [uid] reproduciendo la microSD desde [time] (epoch ms). */
+    onOpenSd: (uid: String, time: Long) -> Unit = { _, _ -> },
+) {
     var alerts by remember { mutableStateOf<List<Alert>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
@@ -77,7 +81,9 @@ fun EventsScreen(cloud: YiCloud, session: YiCloud.Session, cameras: List<CameraD
     val ctx = LocalContext.current
     var aiOnly by remember { mutableStateOf(false) }
     var aiKind by remember { mutableStateOf<String?>(null) }
-    val local = remember(reload, aiOnly) { LocalEvents.all(ctx, cameras.map { it.uid }) }
+    var favVersion by remember { mutableIntStateOf(0) }
+    val local = remember(reload, aiOnly, favVersion) { LocalEvents.all(ctx, cameras.map { it.uid }) }
+    var favOnly by remember { mutableStateOf(false) }
     var openLocal by remember { mutableStateOf<LocalEvent?>(null) }
     // nuevos = posteriores a la última vez que se marcó "leído"
     val store = remember { com.metalsyntax.yihomelocal.data.Store(ctx) }
@@ -121,8 +127,9 @@ fun EventsScreen(cloud: YiCloud, session: YiCloud.Session, cameras: List<CameraD
             Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Chip("TODAS", aiKind == null) { aiKind = null }
-            local.map { it.kind }.distinct().forEach { k -> Chip(k, aiKind == k, kindIcon(k)) { aiKind = k } }
+            Chip("TODAS", aiKind == null && !favOnly) { aiKind = null; favOnly = false }
+            if (local.any { it.fav }) Chip("FAVORITOS (${local.count { it.fav }})", favOnly, Icons.Default.Star) { favOnly = true; aiKind = null }
+            local.map { it.kind }.distinct().forEach { k -> Chip(k, aiKind == k, kindIcon(k)) { aiKind = k; favOnly = false } }
         }
         if (cameras.size > 1) Row(
             Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
@@ -137,14 +144,16 @@ fun EventsScreen(cloud: YiCloud, session: YiCloud.Session, cameras: List<CameraD
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (aiOnly) {
-                val shown = local.filter { (aiKind == null || it.kind == aiKind) && (camUid == null || it.uid == camUid) }
+                val shown = local.filter { (aiKind == null || it.kind == aiKind) && (!favOnly || it.fav) && (camUid == null || it.uid == camUid) }
+                // resumen del día por mascota (filtro MASCOTA)
+                if (aiKind == "MASCOTA" && shown.isNotEmpty()) item { PetSummary(shown, names) }
                 if (shown.isEmpty()) item {
                     Text("Sin detecciones todavía. Abre una cámara con \"IA ON\": el teléfono reconoce personas, vehículos, mascotas (gatos, perros, aves), sombras y movimiento y los guarda aquí.",
                         color = MutedText, fontSize = 13.sp)
                 }
                 shown.groupBy { dayOf(it.time) }.forEach { (d, evs) ->
-                    item(key = "d$d") { DayHeader(d, evs.size) }
-                    items(evs, key = { "${it.uid}${it.time}${it.title}" }) { e -> LocalEventCard(e, names[e.uid] ?: e.uid, e.time > seen) { openLocal = e } }
+                    item(key = "d$d") { DayHeader(d, evs.size, evs.count { it.night }) }
+                    items(evs, key = { it.file }) { e -> LocalEventCard(e, names[e.uid] ?: e.uid, e.time > seen) { openLocal = e } }
                 }
                 return@LazyColumn
             }
@@ -162,8 +171,11 @@ fun EventsScreen(cloud: YiCloud, session: YiCloud.Session, cameras: List<CameraD
         }
     }
 
-    open?.let { a -> AlertDetailDialog(a, names[a.uid] ?: a.uid) { open = null } }
-    openLocal?.let { e -> LocalEventDialog(e, names[e.uid] ?: e.uid, onDismiss = { openLocal = null }, onSd = null) }
+    open?.let { a -> AlertDetailDialog(a, names[a.uid] ?: a.uid, onSd = { open = null; onOpenSd(a.uid, a.time) }) { open = null } }
+    openLocal?.let { e ->
+        LocalEventDialog(e, names[e.uid] ?: e.uid, onDismiss = { openLocal = null },
+            onSd = { openLocal = null; onOpenSd(e.uid, e.time) }, onFav = { favVersion++ })
+    }
 }
 
 /** Tarjeta del historial (diseño "Eventos"): foto con las cajas, hora, cámara, tipo y descripción. */
@@ -173,7 +185,14 @@ private fun LocalEventCard(e: LocalEvent, camName: String, isNew: Boolean, onOpe
     Column(Modifier.fillMaxWidth().panel().clickable(onClick = onOpen)) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
             img?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-            if (isNew) Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) { StatusBadge(true, "NUEVO") }
+            Row(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (e.fav) Icon(Icons.Default.Star, "Favorito", tint = CrimsonRed, modifier = Modifier.size(18.dp).background(Color.Black.copy(alpha = 0.75f)).padding(2.dp))
+                if (e.night) Row(Modifier.background(Color.Black.copy(alpha = 0.85f)).padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Bedtime, null, tint = OnAccent, modifier = Modifier.size(11.dp)); Spacer(Modifier.width(4.dp))
+                    Mono("IR NOCTURNO", OnAccent, 10.sp)
+                }
+                if (isNew) StatusBadge(true, "NUEVO")
+            }
             Mono(camName.uppercase(), OnAccent, 10.sp, Modifier.align(Alignment.TopStart).padding(8.dp).background(Color.Black.copy(alpha = 0.75f)).padding(horizontal = 6.dp, vertical = 2.dp))
             Row(Modifier.align(Alignment.BottomStart).padding(8.dp).background(Color.Black.copy(alpha = 0.75f)).padding(horizontal = 6.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically) {
@@ -185,12 +204,37 @@ private fun LocalEventCard(e: LocalEvent, camName: String, isNew: Boolean, onOpe
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Mono(SimpleDateFormat("dd/MM HH:mm", Locale.US).format(Date(e.time)), MutedText, 11.sp)
                 Text("  ${e.title}", color = PureWhite, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
-                Row(Modifier.clip(RoundedCornerShape(2.dp)).background(CrimsonRed).padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                // de noche el tipo va en rojo oscuro, como "MOVIMIENTO NOCTURNO" del diseño
+                Row(Modifier.clip(RoundedCornerShape(2.dp)).background(if (e.night) DarkRed else CrimsonRed).padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(kindIcon(e.kind), null, tint = OnAccent, modifier = Modifier.size(12.dp)); Spacer(Modifier.width(4.dp))
-                    Mono(e.kind, OnAccent, 10.sp)
+                    Mono(if (e.night) "${e.kind} NOCTURNO" else e.kind, OnAccent, 10.sp)
                 }
             }
-            Text(e.desc, color = MutedText, fontSize = 13.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(e.desc, color = MutedText, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                if (e.score > 0) Mono("${LocalEvents.objLabel(e.obj)} · ${(e.score * 100).toInt()} %", PureWhite, 10.sp,
+                    Modifier.clip(RoundedCornerShape(2.dp)).background(CardBackground).padding(horizontal = 6.dp, vertical = 2.dp))
+            }
+        }
+    }
+}
+
+/** Resumen por mascota de los eventos mostrados: veces vista, última hora y cámara. */
+@Composable
+private fun PetSummary(evs: List<LocalEvent>, names: Map<String, String>) {
+    val pets = evs.filter { it.obj.isNotEmpty() }.groupBy { it.obj }
+    if (pets.isEmpty()) return
+    Column(Modifier.fillMaxWidth().panel().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Pets, null, tint = CrimsonRed, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+            Mono("RESUMEN DE MASCOTAS", PureWhite, 12.sp)
+        }
+        pets.forEach { (obj, l) ->
+            val last = l.maxBy { it.time }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(LocalEvents.objLabel(obj).lowercase().replaceFirstChar { it.uppercase() }, color = PureWhite, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                Mono("${l.size} ${if (l.size == 1) "vez" else "veces"} · última ${SimpleDateFormat("dd/MM HH:mm", Locale.US).format(Date(last.time))} · ${names[last.uid] ?: last.uid}", MutedText, 10.sp)
+            }
         }
     }
 }
@@ -221,7 +265,7 @@ fun AlertRow(a: Alert, camName: String, isNew: Boolean = false, onClick: () -> U
 
 /** Imagen grande y, si la nube dio clip, reproducción (se descarga y descifra a caché). */
 @Composable
-fun AlertDetailDialog(a: Alert, camName: String, onDismiss: () -> Unit) {
+fun AlertDetailDialog(a: Alert, camName: String, onSd: (() -> Unit)? = null, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     var img by remember { mutableStateOf<Bitmap?>(null) }
     var clip by remember { mutableStateOf<File?>(null) }
@@ -262,7 +306,16 @@ fun AlertDetailDialog(a: Alert, camName: String, onDismiss: () -> Unit) {
                     loadingClip = false
                 }
             } else if (a.videoUrl.isEmpty()) Text("Esta alerta solo trae imagen (la nube de Yi no guardó clip).", color = MutedText, fontSize = 12.sp)
+            // misma hora en la grabación de la microSD (5 s antes)
+            if (onSd != null) PrimaryButton("Ver en la microSD", onClick = onSd)
             val text = "${a.kind} · $camName · " + SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.US).format(Date(a.time))
+            // la nube borra las alertas a los pocos días: guardarla en la galería del teléfono
+            if (clip != null || img != null) SecondaryButton(if (clip != null) "Guardar clip en galería" else "Guardar imagen en galería", icon = Icons.Default.Download) {
+                runCatching {
+                    clip?.let { f -> com.metalsyntax.yihomelocal.data.Gallery.saveVideo(ctx, f.copyTo(File(ctx.cacheDir, "save_${f.name}"), true)) }
+                        ?: img?.let { com.metalsyntax.yihomelocal.data.Gallery.saveImage(ctx, camName, it) }
+                }.onSuccess { clipError = "Guardado en $it" }.onFailure { clipError = "No se pudo guardar: ${it.message}" }
+            }
             // comparte el clip si ya se descargó; si no, la imagen
             if (clip != null || img != null) SecondaryButton(if (clip != null) "Compartir clip" else "Compartir imagen", icon = Icons.Default.Share) {
                 runCatching {
@@ -297,7 +350,7 @@ private fun dayOf(t: Long) = java.util.Calendar.getInstance().apply {
 
 /** Encabezado "Hoy 02 de noviembre · N detecciones", como el diseño "Eventos". */
 @Composable
-private fun DayHeader(day: Long, count: Int) {
+private fun DayHeader(day: Long, count: Int, nightCount: Int = 0) {
     val today = dayOf(System.currentTimeMillis())
     val name = when (day) { today -> "Hoy"; today - 86_400_000L -> "Ayer"; else -> SimpleDateFormat("EEEE", Locale("es")).format(Date(day)).replaceFirstChar { it.uppercase() } }
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -306,6 +359,10 @@ private fun DayHeader(day: Long, count: Int) {
         Text(name, color = PureWhite, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.width(8.dp))
         Text(SimpleDateFormat("d 'de' MMMM, yyyy", Locale("es")).format(Date(day)), color = MutedText, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        if (nightCount > 0) {
+            Mono("$nightCount NOCTURNO", OnAccent, 10.sp, Modifier.clip(RoundedCornerShape(2.dp)).background(DarkRed).padding(horizontal = 6.dp, vertical = 3.dp))
+            Spacer(Modifier.width(4.dp))
+        }
         Mono("$count ${if (count == 1) "DETECCIÓN" else "DETECCIONES"}", MutedText, 10.sp,
             Modifier.clip(RoundedCornerShape(2.dp)).background(CardBackground).padding(horizontal = 6.dp, vertical = 3.dp))
     }
