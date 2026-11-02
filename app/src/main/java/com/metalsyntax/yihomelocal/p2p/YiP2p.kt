@@ -163,6 +163,14 @@ object YiP2p {
 
     fun goLive(c: AntsCamera) = c.goLive()
 
+    /** Pausa / reanuda la reproducción de la microSD (el SDK no tiene cambio de velocidad, solo saltar con seekTo). */
+    fun pauseSd(c: AntsCamera) = c.pausePlay()
+
+    fun resumeSd(c: AntsCamera) = c.resumePlay()
+
+    /** Formatea la microSD (borra TODAS las grabaciones). Devuelve el estado nuevo o null si no respondió. */
+    suspend fun formatSd(c: AntsCamera) = cmd(c) { formatTfCard(it) }
+
     /** Hablar: modo 0 = AAC sin cancelación de eco (no usa MobileAEC). Necesita libVoAACEncoder.so. */
     fun startTalk(c: AntsCamera) { System.loadLibrary("VoAACEncoder"); c.startSpeaking(0) }
 

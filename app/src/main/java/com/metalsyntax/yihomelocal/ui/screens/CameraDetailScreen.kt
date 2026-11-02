@@ -200,6 +200,8 @@ fun CameraDetailScreen(
         }
     }
 
+    var sdPaused by remember { mutableStateOf(false) }
+    var dlLeft by remember { mutableIntStateOf(0) } // segundos que faltan de la descarga de la microSD
     var sdStarted by remember { mutableStateOf(false) }
     LaunchedEffect(live) {
         val c = cam
@@ -392,8 +394,20 @@ fun CameraDetailScreen(
 
             SdTimeline(cam, sdAt, frameSec, clock, events.map { it.time } + alerts.map { it.time }, info?.let { storageText(it) },
                 info, onInfo = { info = it },
-                onPlay = { ms -> cam?.let { YiP2p.playSd(it, ms); sdAt = ms; frameSec = 0 } },
-                onLive = { cam?.let { YiP2p.goLive(it) }; sdAt = null })
+                onPlay = { ms -> cam?.let { YiP2p.playSd(it, minOf(ms, System.currentTimeMillis() - 10_000)); sdAt = ms; frameSec = 0; sdPaused = false } },
+                onLive = { cam?.let { YiP2p.goLive(it) }; sdAt = null; sdPaused = false; if (dlLeft > 0 && recording) toggleRecording(); dlLeft = 0 },
+                paused = sdPaused, onPause = { p -> cam?.let { if (p) YiP2p.pauseSd(it) else YiP2p.resumeSd(it) }; sdPaused = p },
+                downloading = if (dlLeft > 0) "Descargando… faltan %d:%02d".format(dlLeft / 60, dlLeft % 60) else null,
+                onDownload = { secs ->
+                    if (!recording) {
+                        toggleRecording(); dlLeft = secs
+                        scope.launch {
+                            while (dlLeft > 0 && recording) { delay(1000); dlLeft-- }
+                            if (recording) toggleRecording() // guarda el MP4 y muestra la ruta
+                            dlLeft = 0
+                        }
+                    } else message = "Ya hay una grabación en curso"
+                })
 
             info?.let { i ->
                 fun apply(cmd: suspend (AntsCamera) -> DeviceInfo?) { val c = cam ?: return; scope.launch { cmd(c)?.let { info = it } } }
@@ -744,7 +758,30 @@ fun CameraSettings(camera: CameraDevice, cam: AntsCamera?, cloud: YiCloud, accou
         Detail("Firmware", version ?: "—")
         version?.let { FirmwareUpdate(camera, cam, cloud, it) }
         Detail("microSD", i?.let { sdText(it.tfstat.toInt()) } ?: "—")
-        if (i != null && i.tfstat.toInt() != 5 && i.total > 0) Detail("Espacio", "${i.free} libres de ${i.total}")
+        if (i != null && i.tfstat.toInt() != 5) {
+            if (i.total > 0) {
+                val used = ((i.total - i.free) * 100L / i.total).toInt().coerceIn(0, 100)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row { Text("Uso de la tarjeta", color = PureWhite, fontSize = 14.sp, modifier = Modifier.weight(1f)); Mono("$used % USADO", if (used >= 90) CrimsonRed else MutedText, 11.sp) }
+                    LinearProgressIndicator(progress = { used / 100f }, color = CrimsonRed, trackColor = SurfaceHigh,
+                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)))
+                    // ponytail: unidades de total/free sin confirmar (Yi no las documenta), se muestran tal cual
+                    Mono("${i.free} libres de ${i.total}", MutedText, 10.sp)
+                }
+            }
+            // para confirmar en la cámara el mapeo de record_mode (1 = continua según el SDK)
+            Detail("Grabación", "${if (YiP2p.isContinuous(i)) "Continua 24 h" else "Solo con movimiento"} (record_mode ${i.record_mode})")
+            var askFormat by remember { mutableStateOf(false) }
+            SecondaryButton("Formatear microSD", color = CrimsonRed, icon = Icons.Default.DeleteForever) { askFormat = true }
+            if (askFormat) AlertDialog(
+                onDismissRequest = { askFormat = false }, containerColor = CardBackground,
+                icon = { Icon(Icons.Default.Warning, null, tint = CrimsonRed) },
+                title = { Text("¿Formatear la microSD?", color = PureWhite) },
+                text = { Text("Se borran TODAS las grabaciones y eventos de la tarjeta de ${camera.name}. No se puede deshacer.", color = MutedText) },
+                confirmButton = { TextButton(onClick = { askFormat = false; apply { YiP2p.formatSd(it) } }) { Text("FORMATEAR", color = CrimsonRed) } },
+                dismissButton = { TextButton(onClick = { askFormat = false }) { Text("Cancelar", color = MutedText) } },
+            )
+        }
     }
 }
 
@@ -825,6 +862,9 @@ private fun SdTimeline(
     cam: AntsCamera?, sdAt: Long?, frameSec: Long, clock: String, marks: List<Long>, storage: String?,
     info: DeviceInfo?, onInfo: (DeviceInfo) -> Unit,
     onPlay: (Long) -> Unit, onLive: () -> Unit,
+    /** Pausa (true) / reanuda (false) la microSD; descarga [seconds] desde la posición actual (null = no descargando). */
+    paused: Boolean = false, onPause: (Boolean) -> Unit = {},
+    downloading: String? = null, onDownload: (Int) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var clips by remember { mutableStateOf<List<YiP2p.SdClip>?>(null) }
@@ -990,6 +1030,35 @@ private fun SdTimeline(
             Spacer(Modifier.weight(1f))
             storage?.let { Mono(it, MutedText, 10.sp) }
         }
+        if (sdAt != null) {
+            val pos = playing ?: sdAt
+            val evs = (sdAlerts.map { it.start } + marks).sorted()
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                SdButton(Icons.Default.SkipPrevious, "Evento anterior", evs.lastOrNull { it < pos - 8_000 } != null) {
+                    evs.lastOrNull { it < pos - 8_000 }?.let { onPlay(it - 3_000) }
+                }
+                SdButton(Icons.Default.Replay5, "5 min atrás") { onPlay(pos - 300_000) }
+                SdButton(Icons.Default.Replay30, "30 s atrás") { onPlay(pos - 30_000) }
+                SdButton(if (paused) Icons.Default.PlayArrow else Icons.Default.Pause, if (paused) "Reanudar" else "Pausar", big = true) { onPause(!paused) }
+                SdButton(Icons.Default.Forward30, "30 s adelante") { onPlay(pos + 30_000) }
+                SdButton(Icons.Default.Forward5, "5 min adelante") { onPlay(pos + 300_000) }
+                SdButton(Icons.Default.SkipNext, "Evento siguiente", evs.firstOrNull { it > pos + 3_000 } != null) {
+                    evs.firstOrNull { it > pos + 3_000 }?.let { onPlay(it - 3_000) }
+                }
+            }
+            // descarga = se graba la reproducción en tiempo real (el SDK no baja archivos de la tarjeta)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Download, null, tint = if (downloading != null) CrimsonRed else MutedText, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                if (downloading != null) Mono(downloading, CrimsonRed, 11.sp, Modifier.weight(1f))
+                else {
+                    Mono("DESCARGAR MP4", MutedText, 11.sp, Modifier.weight(1f))
+                    listOf(30 to "30 s", 60 to "1 min", 300 to "5 min").forEach { (s, l) ->
+                        TextButton(onClick = { onDownload(s) }, enabled = !paused) { Mono(l, CrimsonRed, 11.sp) }
+                    }
+                }
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (sdAt != null) "Reproduciendo la microSD · toca otro punto para saltar"
@@ -998,6 +1067,14 @@ private fun SdTimeline(
             )
             if (sdAt != null) TextButton(onClick = onLive) { Mono("EN VIVO", CrimsonRed, 12.sp) }
         }
+    }
+}
+
+@Composable
+private fun SdButton(icon: ImageVector, desc: String, enabled: Boolean = true, big: Boolean = false, onClick: () -> Unit) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(if (big) 48.dp else 40.dp)
+        .clip(RoundedCornerShape(4.dp)).background(if (big) CrimsonRed else SurfaceHigh)) {
+        Icon(icon, desc, tint = if (!enabled) GhostText else if (big) OnAccent else PureWhite, modifier = Modifier.size(if (big) 26.dp else 20.dp))
     }
 }
 

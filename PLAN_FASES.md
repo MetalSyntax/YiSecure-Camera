@@ -50,14 +50,14 @@ Reglas:
 | 4.4 | Favoritos ⭐ en eventos de la IA (no se borran al rotar los 100), filtro FAVORITOS; alertas de la nube → "Guardar en galería" (imagen o clip), porque la nube las borra a los pocos días. | App | hecho |
 | 4.5 | Filtro MASCOTA con **resumen por mascota** (veces vista, última hora y cámara). Pendiente: modelo de mascotas si EfficientDet confunde gato/perro. | App | hecho (modelo pendiente) |
 
-## Fase 5 — microSD / NVR
+## Fase 5 — microSD / NVR (0.8.0)
 
-| # | Tarea | Origen |
-|---|-------|--------|
-| 5.1 | Confirmar en cámara: modo continua/solo movimiento (`record_mode`) y eventos de tarjeta (`getAlertEvents`). | SDK |
-| 5.2 | **Descargar un tramo** de la microSD a MP4 (marcar inicio/fin en la línea de tiempo; reusa `Mp4Recorder`). | App + SDK |
-| 5.3 | Velocidad 2x/4x/8x y saltar al evento anterior/siguiente. | SDK |
-| 5.4 | **Barra de uso** de la tarjeta (% usado, sobrescritura circular) y **Formatear microSD** (`formatTfCard`, con confirmación). | SDK |
+| # | Tarea | Origen | Estado |
+|---|-------|--------|--------|
+| 5.1 | Confirmar `record_mode` y `getAlertEvents`: Ajustes de la cámara → Almacenamiento muestra "Grabación: … (record_mode N)" para comparar con lo que dice Kami. | SDK | listo para confirmar |
+| 5.2 | **Descargar MP4** de la microSD (30 s / 1 min / 5 min desde la posición actual). Es una captura en tiempo real de la reproducción (el SDK no baja archivos de la tarjeta): 1 min tarda 1 min. | App + SDK | hecho |
+| 5.3 | Controles de reproducción: evento anterior/siguiente, ±30 s, ±5 min, pausa/reanudar. **Sin 2x/4x/8x**: el SDK solo tiene seekTo/pausePlay/resumePlay. | SDK | hecho (velocidad no posible) |
+| 5.4 | **Barra de uso** de la tarjeta y **Formatear microSD** (`formatTfCard`, con confirmación). | SDK | hecho |
 
 ## Fase 6 — Ajustes del diseño
 
