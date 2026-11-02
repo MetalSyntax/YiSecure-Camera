@@ -139,7 +139,7 @@ fun EventsScreen(cloud: YiCloud, session: YiCloud.Session, cameras: List<CameraD
             if (aiOnly) {
                 val shown = local.filter { (aiKind == null || it.kind == aiKind) && (camUid == null || it.uid == camUid) }
                 if (shown.isEmpty()) item {
-                    Text("Sin detecciones todavía. Abre una cámara con \"IA ON\": el teléfono reconoce personas, vehículos, paquetes, animales, sombras y movimiento y los guarda aquí.",
+                    Text("Sin detecciones todavía. Abre una cámara con \"IA ON\": el teléfono reconoce personas, vehículos, mascotas (gatos, perros, aves), sombras y movimiento y los guarda aquí.",
                         color = MutedText, fontSize = 13.sp)
                 }
                 shown.groupBy { dayOf(it.time) }.forEach { (d, evs) ->

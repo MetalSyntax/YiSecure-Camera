@@ -75,6 +75,18 @@ class MainActivity : ComponentActivity() {
                 }
                 var online by remember { mutableStateOf<Map<String, Boolean?>>(emptyMap()) }
                 var snapshotVersion by remember { mutableIntStateOf(0) }
+                var profile by remember { mutableStateOf(store.profile) }
+                var profileBusy by remember { mutableStateOf(false) }
+                var autoRecord by remember { mutableStateOf(false) }
+                fun applyProfile(p: com.metalsyntax.yihomelocal.data.Profile, after: () -> Unit = {}) {
+                    profileBusy = true
+                    scope.launch {
+                        val failed = com.metalsyntax.yihomelocal.data.Profiles.apply(this@MainActivity, p)
+                        profile = store.profile; silent = store.silent; profileBusy = false; snapshotVersion++
+                        error = if (failed.isNotEmpty()) "${p.label}: no respondieron ${failed.joinToString()}" else null
+                        after()
+                    }
+                }
                 var recent by remember { mutableStateOf<List<Alert>?>(null) }
                 var lastUid by remember { mutableStateOf(store.lastCamera) }
                 // cámaras con PIN ya abiertas en esta ejecución de la app
@@ -168,8 +180,8 @@ class MainActivity : ComponentActivity() {
                     }
                         // key: al cambiar de cámara desde el desplegable se reinicia todo el estado de la pantalla
                         cam != null -> key(cam.uid) {
-                            CameraDetailScreen(cam, store, YiCloud(store.region), s, onBack = { closeLive() }, onEdit = { editing = cam },
-                                cameras = cameras, onSwitch = { openLive(it) })
+                            CameraDetailScreen(cam, store, YiCloud(store.region), s, onBack = { autoRecord = false; closeLive() }, onEdit = { editing = cam },
+                                cameras = cameras, onSwitch = { autoRecord = false; openLive(it) }, autoRecord = autoRecord)
                         }
                         else -> Scaffold(
                             containerColor = PitchBlack,
@@ -200,6 +212,15 @@ class MainActivity : ComponentActivity() {
                                     recent = recent, onAllEvents = { tab = 2 },
                                     mainCamera = cameras.firstOrNull { it.uid == lastUid }, onMonitor = { tab = 1 },
                                     silent = silent, silentBusy = silentBusy, onSilent = ::setSilent,
+                                    profile = profile, profileBusy = profileBusy, onProfile = { applyProfile(it) },
+                                    onPanic = {
+                                        // primero abrir y grabar (lo urgente), los perfiles se aplican en paralelo
+                                        (cameras.firstOrNull { it.uid == lastUid } ?: cameras.firstOrNull())?.let { c -> autoRecord = true; openLive(c) }
+                                        applyProfile(com.metalsyntax.yihomelocal.data.Profile.AWAY)
+                                    },
+                                    localTimes = remember(snapshotVersion, cameras) {
+                                        cameras.associate { c -> c.uid to (com.metalsyntax.yihomelocal.data.LocalEvents.list(this@MainActivity, c.uid).maxOfOrNull { it.time } ?: 0L) }
+                                    },
                                 ) else if (tab == 1) MonitorScreen(cameras, monitorFull, { monitorFull = it }, ::locked) { openLive(it) }
                                 else if (tab == 2) EventsScreen(YiCloud(store.region), s, cameras)
                                 else SettingsScreen(

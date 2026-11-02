@@ -82,6 +82,8 @@ fun CameraDetailScreen(
     camera: CameraDevice, store: Store, cloud: YiCloud, account: YiCloud.Session,
     onBack: () -> Unit, onEdit: () -> Unit,
     cameras: List<CameraDevice> = listOf(camera), onSwitch: (CameraDevice) -> Unit = {},
+    /** Pánico: empezar a grabar MP4 en cuanto llegue el video. */
+    autoRecord: Boolean = false,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -133,6 +135,8 @@ fun CameraDetailScreen(
         delay(1500) // dejar que el SDK termine de autenticar
         info = YiP2p.info(c)
     }
+    // estado para las etiquetas de la pantalla Cámaras
+    LaunchedEffect(info) { info?.let { com.metalsyntax.yihomelocal.data.CameraStatus.save(ctx, camera.uid, it) } }
     LaunchedEffect(camera.uid) {
         alerts = runCatching { withContext(Dispatchers.IO) { loadAlerts(cloud, account) } }.getOrDefault(emptyList()).filter { it.uid == camera.uid }
     }
@@ -191,6 +195,13 @@ fun CameraDetailScreen(
                 val path = runCatching { withContext(Dispatchers.IO) { tools.stopRecording(ctx) } }.getOrNull()
                 message = if (path != null) "Video guardado en $path" else "No se grabó ningún cuadro (espera el video)"
             }
+        }
+    }
+
+    var autoStarted by remember { mutableStateOf(false) }
+    LaunchedEffect(live) {
+        if (autoRecord && live && !autoStarted && !recording) {
+            delay(1000); autoStarted = true; toggleRecording(); message = "Pánico: grabando MP4 de esta cámara"
         }
     }
 
@@ -541,8 +552,8 @@ private fun RecentEvents(
     }
     if (events.isEmpty() && alerts.isEmpty()) {
         Text(
-            if (aiOn) "Todavía nada. La IA del teléfono revisa el video mientras lo miras y guarda aquí personas, vehículos, paquetes, animales, sombras y movimiento."
-            else "Activa \"IA\" sobre el video para detectar personas, vehículos y paquetes en el teléfono.",
+            if (aiOn) "Todavía nada. La IA del teléfono revisa el video mientras lo miras y guarda aquí personas, vehículos, mascotas (gatos, perros, aves), sombras y movimiento."
+            else "Activa \"IA\" sobre el video para detectar personas, vehículos y mascotas en el teléfono.",
             color = MutedText, fontSize = 13.sp,
         )
         return

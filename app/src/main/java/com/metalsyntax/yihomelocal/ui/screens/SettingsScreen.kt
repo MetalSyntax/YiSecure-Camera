@@ -154,6 +154,16 @@ fun EditCameraScreen(
                 PrimaryButton("Guardar nombre", enabled = !busy && name.isNotBlank() && name.trim() != camera.name) { onRename(name.trim()) }
             }
 
+            SectionTitle("Ubicación", Icons.Default.Home)
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val st = remember { com.metalsyntax.yihomelocal.data.Store(ctx) }
+            var interior by remember(camera.uid) { mutableStateOf(st.isInterior(camera.uid)) }
+            Column(Modifier.fillMaxWidth().panel().padding(14.dp)) {
+                Toggle("Cámara de interior", "Con el perfil \"En casa\" se pone en privacidad y sin alertas", interior) {
+                    interior = it; st.setInterior(camera.uid, it)
+                }
+            }
+
             if (cloud != null && account != null) CameraSettings(camera, cam, cloud, account)
 
             SectionTitle("PIN", Icons.Default.Lock) { Mono(if (hasPin) "ACTIVO" else "SIN PIN", if (hasPin) CrimsonRed else MutedText, 10.sp) }

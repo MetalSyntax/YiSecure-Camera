@@ -9,7 +9,7 @@ import org.tensorflow.lite.task.vision.detector.ObjectDetector
 import kotlin.math.abs
 
 /** Qué le interesa a una cámara de seguridad de las 80 clases COCO del modelo. */
-enum class Kind(val label: String) { PERSON("PERSONA"), VEHICLE("VEHÍCULO"), PACKAGE("PAQUETE"), ANIMAL("ANIMAL"), MOTION("MOVIMIENTO"), SHADOW("SOMBRA") }
+enum class Kind(val label: String) { PERSON("PERSONA"), VEHICLE("VEHÍCULO"), ANIMAL("MASCOTA"), MOTION("MOVIMIENTO"), SHADOW("SOMBRA") }
 
 /** Detección con la caja normalizada a 0..1 sobre el cuadro. */
 data class Det(val kind: Kind, val name: String, val score: Float, val box: RectF)
@@ -25,10 +25,15 @@ object Detector {
     private val KINDS = mapOf(
         "person" to Kind.PERSON,
         "car" to Kind.VEHICLE, "truck" to Kind.VEHICLE, "bus" to Kind.VEHICLE, "motorcycle" to Kind.VEHICLE, "bicycle" to Kind.VEHICLE,
-        // COCO no tiene "caja": mochilas, bolsos y maletas son lo más parecido a un paquete dejado en la puerta
-        "suitcase" to Kind.PACKAGE, "backpack" to Kind.PACKAGE, "handbag" to Kind.PACKAGE,
-        "dog" to Kind.ANIMAL, "cat" to Kind.ANIMAL, "bird" to Kind.ANIMAL, "horse" to Kind.ANIMAL,
+        // sin "paquete": COCO no tiene caja y maleta/mochila/bolso confundía sillas y muebles
+        "dog" to Kind.ANIMAL, "cat" to Kind.ANIMAL, "bird" to Kind.ANIMAL,
     )
+
+    /**
+     * Confianza mínima por clase (el modelo corre a 0,45). Gatos y perros se confunden con cojines, sillas o bultos
+     * a baja confianza; las aves pequeñas aún más.
+     */
+    private val MIN_SCORE = mapOf("cat" to 0.55f, "dog" to 0.55f, "bird" to 0.6f)
 
     @Synchronized
     private fun get(ctx: Context): ObjectDetector? {
@@ -50,7 +55,10 @@ object Detector {
         return d.detect(TensorImage.fromBitmap(bmp)).mapNotNull { r ->
             val c = r.categories.firstOrNull() ?: return@mapNotNull null
             val kind = KINDS[c.label] ?: return@mapNotNull null
+            if (c.score < (MIN_SCORE[c.label] ?: 0f)) return@mapNotNull null
             val b = r.boundingBox
+            // una caja que ocupa casi todo el cuadro suele ser un error del modelo (pared, cama, sofá)
+            if (b.width() * b.height() > 0.8f * w * h) return@mapNotNull null
             Det(kind, c.label, c.score, RectF((b.left / w).coerceIn(0f, 1f), (b.top / h).coerceIn(0f, 1f), (b.right / w).coerceIn(0f, 1f), (b.bottom / h).coerceIn(0f, 1f)))
         }
     }
@@ -113,7 +121,7 @@ data class Finding(val kind: Kind, val title: String, val desc: String)
 
 /**
  * Reglas sobre lo que se detecta cuadro a cuadro para sacar "acciones": quién entra, quién merodea, quién se va,
- * un vehículo que se mueve o se estaciona, un paquete que queda solo. Un objeto por tipo (el más seguro).
+ * un vehículo que se mueve o se estaciona, una mascota que pasa o se queda. Un objeto por tipo (el más seguro).
  */
 class Sentinel {
     private class Track(val first: Long, var last: Long, val startX: Float, var x: Float) {
@@ -143,8 +151,7 @@ class Sentinel {
                 out += when (k) {
                     Kind.PERSON -> Finding(k, "Persona detectada", "Entró por ${side(cx)} · confianza ${(d.score * 100).toInt()} %")
                     Kind.VEHICLE -> Finding(k, "Vehículo detectado", "${name(d.name)} · confianza ${(d.score * 100).toInt()} %")
-                    Kind.PACKAGE -> Finding(k, "Objeto detectado", "${name(d.name)} en ${side(cx)}")
-                    else -> Finding(k, "Animal detectado", "${name(d.name)} · confianza ${(d.score * 100).toInt()} %")
+                    else -> Finding(k, "${name(d.name)} detectado", "En ${side(cx)} · confianza ${(d.score * 100).toInt()} %")
                 }
                 return@forEach
             }
@@ -157,9 +164,11 @@ class Sentinel {
                     if (abs(cx - t.startX) > 0.15f) once("moving") { Finding(k, "Vehículo en movimiento", "Cruzó hacia ${if (cx > t.startX) "la derecha" else "la izquierda"}") }
                     else if (secs >= 30) once("parked") { Finding(k, "Vehículo estacionado", "Quieto más de $secs s") }
                 }
-                Kind.PACKAGE -> {
+                Kind.ANIMAL -> {
                     val person = tracks[Kind.PERSON]
-                    if (secs >= 10 && (person == null || now - person.last > 5_000)) once("left") { Finding(k, "Paquete dejado", "${name(d.name)} quieto sin nadie cerca") }
+                    // mascota sola un buen rato (saber qué hace el gato/perro cuando no hay nadie)
+                    if (secs >= 60 && (person == null || now - person.last > 30_000)) once("alone") { Finding(k, "${name(d.name)} solo en casa", "Lleva $secs s en escena sin personas") }
+                    if (abs(cx - t.startX) > 0.3f) once("moving") { Finding(k, "${name(d.name)} en movimiento", "Cruzó hacia ${if (cx > t.startX) "la derecha" else "la izquierda"}") }
                 }
                 else -> {}
             }
@@ -182,8 +191,7 @@ class Sentinel {
 
     private fun name(n: String) = when (n) {
         "car" -> "Auto"; "truck" -> "Camión"; "bus" -> "Autobús"; "motorcycle" -> "Moto"; "bicycle" -> "Bicicleta"
-        "suitcase" -> "Maleta/caja"; "backpack" -> "Mochila"; "handbag" -> "Bolso"
-        "dog" -> "Perro"; "cat" -> "Gato"; "bird" -> "Ave"; "horse" -> "Caballo"
+        "dog" -> "Perro"; "cat" -> "Gato"; "bird" -> "Ave"
         else -> n
     }
 }

@@ -21,7 +21,7 @@ Reglas:
 | 1.3 | **Nuevos / leído**: "N eventos nuevos" desde la última visita + botón "Marcar leído". | App | hecho (sin probar) |
 | 1.4 | **Compartir** imagen o clip de un evento (nube e IA del teléfono) con el menú de Android. | App | hecho (sin probar) |
 
-## Fase 2 — Avisos (0.5.0, compilada, sin instalar)
+## Fase 2 — Avisos (0.5.0, instalada)
 
 | # | Tarea | Origen | Estado |
 |---|-------|--------|--------|
@@ -30,14 +30,15 @@ Reglas:
 | 2.2 | **Modo silencioso global**: apaga/enciende el push de todas las cámaras (`/v5/alert/push_prop`, afecta también a Kami/Yi Home) y los avisos de la app. Al salir no avisa lo ocurrido en silencio. | Nube | hecho (sin probar) |
 | 2.3 | Barra de **acciones rápidas** en Cámaras: Hablar (abre la cámara principal), Monitor, Silenciosa, Eventos. Sin "Captura" directa ni "Abrir" (necesitan P2P abierto / no hay cerradura). | App | hecho (sin probar) |
 
-## Fase 3 — Pantalla Cámaras como el diseño
+## Fase 3 — Pantalla Cámaras como el diseño (0.6.0, instalada, sin probar)
 
-| # | Tarea | Origen |
-|---|-------|--------|
-| 3.1 | **Perfiles En casa / Fuera de casa / Modo noche**: aplican privacidad, detección y alertas a todas las cámaras. | App + SDK |
-| 3.2 | Botón **pánico ⚠** (confirmar → activa todas las cámaras, alertas y graba MP4 de la principal). | App |
-| 3.3 | **Tarjeta principal grande**: Wi-Fi, batería, resolución·FPS·códec, REC y accesos Clips/Detalle sobre el video. | App |
-| 3.4 | **Etiquetas por miniatura**: ALERTA, IR activo, Audio ON, "Movimiento hace 4 m", sensibilidad. | App + SDK |
+| # | Tarea | Origen | Estado |
+|---|-------|--------|--------|
+| 3.1 | **Perfiles En casa / Fuera de casa / Modo noche**: conexión P2P corta por cámara + push en la nube. En casa = interiores en privacidad y sin push; Fuera = todas encendidas con push; Noche = además IR auto y sensibilidad alta. Marca "Cámara de interior" en Ajustes de la cámara. | App + SDK + Nube | hecho |
+| 3.2 | **Pánico ⚠** (con confirmación): abre la cámara principal y graba MP4 en cuanto llega el video; aplica "Fuera de casa" a todas. | App | hecho |
+| 3.3 | **Principal grande + resto en cuadrícula de 2**; pie con "Movimiento hace X", Wi-Fi y batería. | App | hecho |
+| 3.4 | **Etiquetas por miniatura**: ALERTA (<10 min), PRIVACIDAD, IR ACTIVO, SD 24H / SD EVENTOS (último estado leído por P2P, data/CameraStatus.kt). | App + SDK | hecho |
+| 3.5 | **IA: mascotas** — sin "paquete" (COCO no tiene caja; sillas salían como paquete). Gato/Perro/Ave con confianza mínima 0,55–0,6, descarte de cajas >80 % del cuadro, eventos "Gato detectado", "en movimiento", "solo en casa" (>60 s sin personas). | App | hecho |
 
 ## Fase 4 — Eventos completos
 
@@ -47,6 +48,7 @@ Reglas:
 | 4.2 | Estilo nocturno IR en eventos de noche (badge "MOVIMIENTO NOCTURNO"). | App |
 | 4.3 | Acción "Ver en la microSD" también desde eventos de la nube (saltar a esa hora en el NVR). | App + SDK |
 | 4.4 | Guardar evento en favoritos (no se borra al rotar los 100 por cámara). | App |
+| 4.5 | **Filtro "Mascotas"** en Eventos y resumen diario por mascota (veces visto, último lugar). Afinar con un modelo de mascotas si EfficientDet confunde gato/perro. | App |
 
 ## Fase 5 — microSD / NVR
 

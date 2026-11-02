@@ -58,6 +58,15 @@ class Store(ctx: Context) {
         get() = p.getBoolean("silent", false)
         set(v) = p.edit().putBoolean("silent", v).apply()
 
+    /** Perfil activo (Profile.name) o null si nunca se aplicó. */
+    var profile: String?
+        get() = p.getString("profile", null)
+        set(v) = p.edit().putString("profile", v).apply()
+
+    /** Cámara de interior: el perfil "En casa" la pone en privacidad. */
+    fun isInterior(uid: String) = p.getBoolean("interior_$uid", false)
+    fun setInterior(uid: String, v: Boolean) = p.edit().putBoolean("interior_$uid", v).apply()
+
     var ai: Boolean
         get() = p.getBoolean("ai", true)
         set(v) = p.edit().putBoolean("ai", v).apply()
