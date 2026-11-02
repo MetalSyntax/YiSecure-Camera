@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val store = Store(this)
+        if (store.session != null && store.notify) com.metalsyntax.yihomelocal.data.AlertNotifier.schedule(this, true)
 
         setContent {
             var theme by remember { mutableIntStateOf(store.theme) }
@@ -51,10 +52,27 @@ class MainActivity : ComponentActivity() {
                 var selected by remember { mutableStateOf<CameraDevice?>(null) }
                 var editing by remember { mutableStateOf<CameraDevice?>(null) }
                 var adding by remember { mutableStateOf(false) }
-                var tab by remember { mutableIntStateOf(0) }
+                var tab by remember { mutableIntStateOf(intent.getIntExtra(com.metalsyntax.yihomelocal.data.AlertNotifier.EXTRA_TAB, 0)) }
+                // toque en una notificación con la app abierta → pestaña Eventos
+                DisposableEffect(Unit) {
+                    val l = androidx.core.util.Consumer<android.content.Intent> { i ->
+                        if (i.hasExtra(com.metalsyntax.yihomelocal.data.AlertNotifier.EXTRA_TAB)) { selected = null; tab = i.getIntExtra(com.metalsyntax.yihomelocal.data.AlertNotifier.EXTRA_TAB, 0) }
+                    }
+                    addOnNewIntentListener(l); onDispose { removeOnNewIntentListener(l) }
+                }
                 var monitorFull by remember { mutableStateOf(false) }
                 var busy by remember { mutableStateOf(false) }
                 var error by remember { mutableStateOf<String?>(null) }
+                var silent by remember { mutableStateOf(store.silent) }
+                var silentBusy by remember { mutableStateOf(false) }
+                fun setSilent(on: Boolean) {
+                    silentBusy = true
+                    scope.launch {
+                        val failed = withContext(Dispatchers.IO) { com.metalsyntax.yihomelocal.data.AlertNotifier.setSilent(this@MainActivity, on) }
+                        silent = store.silent; silentBusy = false
+                        error = if (failed.isNotEmpty()) "No se pudo cambiar el push en: ${failed.joinToString()}" else null
+                    }
+                }
                 var online by remember { mutableStateOf<Map<String, Boolean?>>(emptyMap()) }
                 var snapshotVersion by remember { mutableIntStateOf(0) }
                 var recent by remember { mutableStateOf<List<Alert>?>(null) }
@@ -122,7 +140,8 @@ class MainActivity : ComponentActivity() {
                         s == null -> LoginScreen(store.region, busy, error, store.savedAccount) { account, password, region, rememberMe ->
                             store.region = region
                             store.savedAccount = if (rememberMe) account to password else null
-                            cloudCall(login = { YiCloud(region).login(account, password) })
+                            cloudCall(login = { YiCloud(region).login(account, password) },
+                                after = { if (store.notify) com.metalsyntax.yihomelocal.data.AlertNotifier.schedule(this@MainActivity, true) })
                         }
                         adding -> AddCameraScreen(YiCloud(store.region), s, store, onBack = { adding = false }) { uid ->
                             // recién vinculada: refrescar y abrir el diálogo para ponerle nombre
@@ -132,6 +151,7 @@ class MainActivity : ComponentActivity() {
                         EditCameraScreen(
                             e, busy, store.hasPin(e.uid).also { pinVersion }, onBack = { editing = null },
                             onPin = { pin -> store.setPin(e.uid, pin); unlocked = unlocked + e.uid; pinVersion++ },
+                            cloud = YiCloud(store.region), account = s,
                             onRename = { name ->
                                 cloudCall(action = { c, ss -> c.rename(ss, e.uid, name) }, after = {
                                     editing = null; selected = selected?.let { sel -> cameras.firstOrNull { it.uid == sel.uid } }
@@ -140,12 +160,17 @@ class MainActivity : ComponentActivity() {
                             onDelete = {
                                 cloudCall(action = { c, ss -> c.delete(ss, e.uid) }, after = {
                                     Snapshots.delete(this@MainActivity, e.uid)
+                                    com.metalsyntax.yihomelocal.data.LocalEvents.delete(this@MainActivity, e.uid)
                                     editing = null; if (selected?.uid == e.uid) selected = null
                                 })
                             },
                         )
                     }
-                        cam != null -> CameraDetailScreen(cam, store, YiCloud(store.region), s, onBack = { closeLive() }, onEdit = { editing = cam })
+                        // key: al cambiar de cámara desde el desplegable se reinicia todo el estado de la pantalla
+                        cam != null -> key(cam.uid) {
+                            CameraDetailScreen(cam, store, YiCloud(store.region), s, onBack = { closeLive() }, onEdit = { editing = cam },
+                                cameras = cameras, onSwitch = { openLive(it) })
+                        }
                         else -> Scaffold(
                             containerColor = PitchBlack,
                             bottomBar = {
@@ -173,12 +198,16 @@ class MainActivity : ComponentActivity() {
                                     onSelectCamera = { openLive(it) }, onEditCamera = { c -> guarded(c) { editing = c } },
                                     onAddCamera = { adding = true }, onRefresh = { online = emptyMap(); cloudCall() },
                                     recent = recent, onAllEvents = { tab = 2 },
+                                    mainCamera = cameras.firstOrNull { it.uid == lastUid }, onMonitor = { tab = 1 },
+                                    silent = silent, silentBusy = silentBusy, onSilent = ::setSilent,
                                 ) else if (tab == 1) MonitorScreen(cameras, monitorFull, { monitorFull = it }, ::locked) { openLive(it) }
                                 else if (tab == 2) EventsScreen(YiCloud(store.region), s, cameras)
                                 else SettingsScreen(
                                     cameras, online, store.region, theme, onTheme = { theme = it; store.theme = it },
                                     onAddCamera = { adding = true }, onEditCamera = { c -> guarded(c) { editing = c } },
+                                    silent = silent, onSilent = ::setSilent,
                                     onLogout = {
+                                        com.metalsyntax.yihomelocal.data.AlertNotifier.schedule(this@MainActivity, false)
                                         store.session = null; store.cameras = emptyList()
                                         session = null; cameras = emptyList(); tab = 0
                                     },

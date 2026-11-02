@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -64,9 +65,10 @@ fun StatusBadge(online: Boolean, text: String = if (online) "LIVE" else "OFFLINE
 
 /** Título de sección en mayúsculas con acento rojo a la izquierda. */
 @Composable
-fun SectionTitle(text: String, trailing: @Composable () -> Unit = {}) {
+fun SectionTitle(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, trailing: @Composable () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(3.dp, 14.dp).background(CrimsonRed))
+        if (icon != null) Icon(icon, null, tint = CrimsonRed, modifier = Modifier.size(18.dp))
+        else Box(Modifier.size(3.dp, 14.dp).background(CrimsonRed))
         Spacer(Modifier.width(8.dp))
         Mono(text.uppercase(), PureWhite, 13.sp, Modifier.weight(1f))
         trailing()
@@ -83,12 +85,18 @@ fun PrimaryButton(text: String, enabled: Boolean = true, modifier: Modifier = Mo
 
 /** Botón secundario: #2A2A2A con borde #383838. */
 @Composable
-fun SecondaryButton(text: String, modifier: Modifier = Modifier.fillMaxWidth(), color: Color = PureWhite, onClick: () -> Unit) =
+fun SecondaryButton(
+    text: String, modifier: Modifier = Modifier.fillMaxWidth(), color: Color = PureWhite,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null, onClick: () -> Unit,
+) =
     OutlinedButton(
         onClick = onClick, modifier = modifier.height(48.dp), shape = RoundedCornerShape(4.dp),
         colors = ButtonDefaults.outlinedButtonColors(containerColor = SurfaceHigh),
         border = androidx.compose.foundation.BorderStroke(1.dp, BorderStrong),
-    ) { Mono(text.uppercase(), color, 12.sp) }
+    ) {
+        icon?.let { Icon(it, null, tint = color, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)) }
+        Mono(text.uppercase(), color, 12.sp)
+    }
 
 /** Campo de texto plano según el diseño (borde blanco al enfocar). Con [password] lleva el ojo para ver lo escrito. */
 @Composable
@@ -144,5 +152,23 @@ fun ImmersiveLandscape(full: Boolean) {
                 activity?.window?.let { WindowCompat.getInsetsController(it, it.decorView).show(WindowInsetsCompat.Type.systemBars()) }
             }
         }
+    }
+}
+
+/** Ícono por tipo de evento (alertas de la nube y IA del teléfono), como los filtros del diseño "Eventos". */
+fun kindIcon(kind: String): androidx.compose.ui.graphics.vector.ImageVector = with(Icons.Default) {
+    val k = kind.lowercase()
+    when {
+        "persona" in k || "rostro" in k -> Person
+        "veh" in k -> DirectionsCar
+        "paquete" in k -> Inventory2
+        "mascota" in k || "animal" in k -> Pets
+        "llanto" in k -> ChildCare
+        "sonido" in k -> GraphicEq
+        "caída" in k -> PersonalInjury
+        "sombra" in k -> Contrast
+        "movimiento" in k -> Sensors
+        "ia" in k -> Psychology
+        else -> NotificationsActive
     }
 }

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Las imágenes y clips de alertas de Yi vienen con URL http:// del OSS de Aliyun (ya cifrados con AES por Yi). -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">aliyuncs.com</domain>
+    </domain-config>
+</network-security-config>

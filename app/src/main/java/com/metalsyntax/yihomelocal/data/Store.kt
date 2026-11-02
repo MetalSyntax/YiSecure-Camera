@@ -30,8 +30,37 @@ class Store(ctx: Context) {
         set(v) = p.edit().putString("last_camera", v).apply()
 
     var audio: Boolean
-        get() = p.getBoolean("audio", false)
+        get() = p.getBoolean("audio", true)
         set(v) = p.edit().putBoolean("audio", v).apply()
+
+    /** Detección de objetos con IA en el teléfono mientras se mira el vivo. */
+    /** Controles e información sobre el video visibles (ojo abierto). */
+    var hud: Boolean
+        get() = p.getBoolean("hud", true)
+        set(v) = p.edit().putBoolean("hud", v).apply()
+
+    /** Hora (epoch ms) hasta la que el usuario marcó los eventos como leídos. */
+    var eventsSeen: Long
+        get() = p.getLong("events_seen", 0L)
+        set(v) = p.edit().putLong("events_seen", v).apply()
+
+    /** Avisos de alertas nuevas (WorkManager) y hasta qué alerta (epoch ms) ya se avisó. */
+    var notify: Boolean
+        get() = p.getBoolean("notify", true)
+        set(v) = p.edit().putBoolean("notify", v).apply()
+
+    var notifiedUntil: Long
+        get() = p.getLong("notified_until", 0L)
+        set(v) = p.edit().putLong("notified_until", v).apply()
+
+    /** Modo silencioso global: push de la nube apagado en todas las cámaras y sin avisos de la app. */
+    var silent: Boolean
+        get() = p.getBoolean("silent", false)
+        set(v) = p.edit().putBoolean("silent", v).apply()
+
+    var ai: Boolean
+        get() = p.getBoolean("ai", true)
+        set(v) = p.edit().putBoolean("ai", v).apply()
 
     /** 0 = según el sistema, 1 = oscuro, 2 = claro. */
     var theme: Int

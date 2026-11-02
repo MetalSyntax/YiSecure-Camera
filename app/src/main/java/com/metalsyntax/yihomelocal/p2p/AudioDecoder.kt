@@ -14,15 +14,22 @@ class AudioDecoder {
     private var track: AudioTrack? = null
     private var key = ""
 
+    private var logged = false
+
     @Synchronized
     fun feed(f: AVFrame) {
         val data = f.frmData ?: return
         val len = if (f.frmSize in 1..data.size) f.frmSize else data.size
         val rate = AVFrame.getSamplerate(f.flags).takeIf { it > 0 } ?: 16000
-        when (f.codecId.toInt()) {
-            AVFrame.MEDIA_CODEC_AUDIO_PCM -> play(data, 0, len, rate)
-            AVFrame.MEDIA_CODEC_AUDIO_AAC -> aac(data, len, rate)
+        if (!logged) {
+            logged = true
+            android.util.Log.i("YiAudio", "codec=${f.codecId} flags=${f.flags} rate=$rate len=$len head=" +
+                data.take(minOf(8, len)).joinToString(" ") { "%02x".format(it) })
         }
+        // AntsAudioPlayer de Yi decodifica TODO como AAC (DecodeAAC) sin mirar el códec: el campo no es fiable.
+        // Solo se toma como PCM crudo si dice PCM y no trae cabecera ADTS.
+        if (adts(data, len) == null && f.codecId.toInt() == AVFrame.MEDIA_CODEC_AUDIO_PCM) play(data, 0, len, rate)
+        else aac(data, len, rate)
     }
 
     private fun aac(data: ByteArray, len: Int, fallbackRate: Int) {
@@ -84,7 +91,25 @@ class AudioDecoder {
         codec = null; track = null; key = ""
     }
 
-    private companion object {
+    /** Configuración AAC leída de una cabecera ADTS (para el decodificador y para la pista de audio del MP4). */
+    data class Adts(val rate: Int, val rateIndex: Int, val channels: Int, val profile: Int, val headerLen: Int, val frameLen: Int) {
+        /** AudioSpecificConfig (csd-0) equivalente. */
+        fun csd() = byteArrayOf(((profile shl 3) or (rateIndex shr 1)).toByte(), (((rateIndex and 1) shl 7) or (channels shl 3)).toByte())
+    }
+
+    companion object {
         val ADTS_RATES = listOf(96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350)
+
+        /** Cabecera ADTS en [off] o null si no hay. */
+        fun adts(d: ByteArray, len: Int, off: Int = 0): Adts? {
+            if (len - off < 7 || d[off] != 0xFF.toByte() || (d[off + 1].toInt() and 0xF0) != 0xF0) return null
+            val b2 = d[off + 2].toInt() and 0xFF
+            val b3 = d[off + 3].toInt() and 0xFF
+            val idx = (b2 shr 2) and 0xF
+            val frameLen = ((b3 and 0x03) shl 11) or ((d[off + 4].toInt() and 0xFF) shl 3) or ((d[off + 5].toInt() and 0xFF) shr 5)
+            val header = if ((d[off + 1].toInt() and 1) == 0) 9 else 7 // protection_absent=0 → 2 bytes de CRC
+            return Adts(ADTS_RATES.getOrElse(idx) { 16000 }, idx, (((b2 and 1) shl 2) or (b3 shr 6)).coerceAtLeast(1),
+                ((b2 shr 6) and 3) + 1, header, frameLen)
+        }
     }
 }

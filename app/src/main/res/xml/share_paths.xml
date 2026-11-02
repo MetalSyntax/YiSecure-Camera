@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Archivos que se pueden compartir: clips/imágenes en caché y capturas de la IA (files/ai). -->
+<paths>
+    <cache-path name="cache" path="." />
+    <files-path name="ai" path="ai/" />
+</paths>

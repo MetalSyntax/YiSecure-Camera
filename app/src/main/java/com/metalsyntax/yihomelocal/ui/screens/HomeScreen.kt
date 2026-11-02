@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Tune
@@ -70,6 +71,12 @@ fun HomeScreen(
     /** Últimas alertas de la nube (null = cargando o sin acceso). */
     recent: List<Alert>? = null,
     onAllEvents: () -> Unit = {},
+    /** Barra de acciones rápidas del diseño. */
+    mainCamera: CameraDevice? = null,
+    onMonitor: () -> Unit = {},
+    silent: Boolean = false,
+    silentBusy: Boolean = false,
+    onSilent: (Boolean) -> Unit = {},
 ) {
     var open by remember { mutableStateOf<Alert?>(null) }
     fun isOn(c: CameraDevice) = if (c.uid in online) online[c.uid] ?: c.online else null
@@ -101,9 +108,19 @@ fun HomeScreen(
                 CameraCard(cam, isOn(cam), snapshotVersion, onClick = { onSelectCamera(cam) }, onEdit = { onEditCamera(cam) })
             }
             item { SecondaryButton("+ Añadir nueva cámara", onClick = onAddCamera) }
+            if (cameras.isNotEmpty()) item {
+                Row(Modifier.fillMaxWidth().panel().padding(6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Hablar y Captura abren la cámara principal (necesitan su conexión P2P); "Abrir" no aplica: no hay cerradura
+                    QuickAction(Icons.Default.Mic, "Hablar", false, Modifier.weight(1f)) { (mainCamera ?: cameras.first()).let(onSelectCamera) }
+                    QuickAction(Icons.Default.GridView, "Monitor", false, Modifier.weight(1f), onClick = onMonitor)
+                    QuickAction(if (silent) Icons.Default.NotificationsOff else Icons.Default.NotificationsActive,
+                        if (silentBusy) "…" else if (silent) "Silenciosa" else "Alertas", silent, Modifier.weight(1f)) { if (!silentBusy) onSilent(!silent) }
+                    QuickAction(Icons.Default.Notifications, "Eventos", false, Modifier.weight(1f), onClick = onAllEvents)
+                }
+            }
             if (recent != null) {
                 item {
-                    SectionTitle("Registro de incidentes") {
+                    SectionTitle("Registro de incidentes", Icons.Default.Bolt) {
                         Mono("VER TODO", CrimsonRed, 10.sp, Modifier.clickable(onClick = onAllEvents).padding(4.dp))
                     }
                 }
@@ -149,5 +166,15 @@ private fun CameraCard(camera: CameraDevice, on: Boolean?, snapshotVersion: Int,
             Mono(when (on) { true -> "Toca para ver en vivo"; false -> "No responde en la red P2P"; null -> "Comprobando conexión…" }, if (on == false) CrimsonRed else MutedText, 11.sp, Modifier.weight(1f))
             Mono(if (camera.tnpKey.isNotEmpty()) "TNP" else "TUTK", MutedText, 11.sp)
         }
+    }
+}
+
+/** Botón de la barra de acciones rápidas (diseño "Cámaras": Hablar / Captura / Silenciosa / Abrir). */
+@Composable
+private fun QuickAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Column(modifier.clip(RoundedCornerShape(4.dp)).background(SurfaceHigh).clickable(onClick = onClick).padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Icon(icon, label, tint = if (active) CrimsonRed else PureWhite, modifier = Modifier.size(22.dp))
+        Text(label, color = if (active) CrimsonRed else PureWhite, fontSize = 12.sp, maxLines = 1)
     }
 }

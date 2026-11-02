@@ -94,7 +94,7 @@ fun LiveView(
         val video = VideoDecoder(sf)
         val sound = AudioDecoder()
         live = false
-        val cam = YiP2p.open(camera, quality, audio, object : YiP2p.Listener() {
+        val cam = runCatching { YiP2p.open(camera, quality, audio, object : YiP2p.Listener() {
             override fun onState(text: String, connected: Boolean) {
                 if (connected) live = true
                 state(text)
@@ -104,14 +104,17 @@ fun LiveView(
                 video.feed(f)
                 tools?.recorder?.write(f)
             }
-            override fun onAudio(f: AVFrame) { if (audioOn) sound.feed(f) }
-        })
+            override fun onAudio(f: AVFrame) {
+                tools?.recorder?.writeAudio(f)
+                if (audioOn) sound.feed(f)
+            }
+        }) }.onFailure { state(it.message ?: "No se pudo abrir el P2P") }.getOrNull()
         onCamera(cam)
         onDispose {
             tools?.stopRecording(ctx)
             snapshot() // leer el último cuadro antes de que se destruya el decodificador
             onCamera(null)
-            YiP2p.close(cam)
+            cam?.let(YiP2p::close)
             video.release()
             sound.release()
         }

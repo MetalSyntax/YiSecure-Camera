@@ -1,0 +1,85 @@
+# YiSecure — plan por fases (diseño Obsidian Sentinel)
+
+Comparación del diseño `stitch_smart_home_security_ui` (Cámaras, En vivo, Eventos, Ajustes) con YiSecure 0.3.1.
+Cada punto indica de dónde sale: **SDK** = función ya presente en `yisdk.jar` (falta probarla), **App** = solo código
+propio, **Nube** = API gw-*.xiaoyi.com.
+
+Reglas:
+- Solo se implementa lo que funciona de verdad con las cámaras del usuario; nada decorativo que finja datos.
+- **PTZ real queda fuera**: las cámaras son fijas. La cruceta sigue moviendo el **zoom digital (simulado)**.
+  Se desarrolla el día que haya una cámara motorizada.
+- Cada fase termina con: compila, instalado por ADB, probado en el teléfono, commit.
+
+---
+
+## Fase 1 — Uso diario (0.4.0, instalada, en prueba)
+
+| # | Tarea | Origen | Estado |
+|---|-------|--------|--------|
+| 1.1 | **Ojo en el video** para ocultar/mostrar todos los controles e información de la cámara (chips, cruceta, Hablar, botones, cajas de la IA). Se recuerda entre sesiones. | App | hecho (sin probar) |
+| 1.2 | **Eventos agrupados por día**: "Hoy", "Ayer", fecha; contador de detecciones por día. | App | hecho (sin probar) |
+| 1.3 | **Nuevos / leído**: "N eventos nuevos" desde la última visita + botón "Marcar leído". | App | hecho (sin probar) |
+| 1.4 | **Compartir** imagen o clip de un evento (nube e IA del teléfono) con el menú de Android. | App | hecho (sin probar) |
+
+## Fase 2 — Avisos (0.5.0, compilada, sin instalar)
+
+| # | Tarea | Origen | Estado |
+|---|-------|--------|--------|
+| 2.1 | **Notificaciones** de alertas nuevas de la nube: WorkManager cada 15 min, imagen descifrada, resumen si son >4, toque → pestaña Eventos. Ajustes: interruptor (pide permiso en Android 13+) y "Revisar ahora". | App + Nube | hecho (sin probar) |
+| 2.1b | Avisos de la IA del teléfono con la app en segundo plano (monitor fijo). Pasa a Fase 7 junto al modo kiosco. | App | pendiente |
+| 2.2 | **Modo silencioso global**: apaga/enciende el push de todas las cámaras (`/v5/alert/push_prop`, afecta también a Kami/Yi Home) y los avisos de la app. Al salir no avisa lo ocurrido en silencio. | Nube | hecho (sin probar) |
+| 2.3 | Barra de **acciones rápidas** en Cámaras: Hablar (abre la cámara principal), Monitor, Silenciosa, Eventos. Sin "Captura" directa ni "Abrir" (necesitan P2P abierto / no hay cerradura). | App | hecho (sin probar) |
+
+## Fase 3 — Pantalla Cámaras como el diseño
+
+| # | Tarea | Origen |
+|---|-------|--------|
+| 3.1 | **Perfiles En casa / Fuera de casa / Modo noche**: aplican privacidad, detección y alertas a todas las cámaras. | App + SDK |
+| 3.2 | Botón **pánico ⚠** (confirmar → activa todas las cámaras, alertas y graba MP4 de la principal). | App |
+| 3.3 | **Tarjeta principal grande**: Wi-Fi, batería, resolución·FPS·códec, REC y accesos Clips/Detalle sobre el video. | App |
+| 3.4 | **Etiquetas por miniatura**: ALERTA, IR activo, Audio ON, "Movimiento hace 4 m", sensibilidad. | App + SDK |
+
+## Fase 4 — Eventos completos
+
+| # | Tarea | Origen |
+|---|-------|--------|
+| 4.1 | Etiquetas de confianza sobre las cajas en las tarjetas ("PERSONA #01 · 98 %", id de seguimiento). | App |
+| 4.2 | Estilo nocturno IR en eventos de noche (badge "MOVIMIENTO NOCTURNO"). | App |
+| 4.3 | Acción "Ver en la microSD" también desde eventos de la nube (saltar a esa hora en el NVR). | App + SDK |
+| 4.4 | Guardar evento en favoritos (no se borra al rotar los 100 por cámara). | App |
+
+## Fase 5 — microSD / NVR
+
+| # | Tarea | Origen |
+|---|-------|--------|
+| 5.1 | Confirmar en cámara: modo continua/solo movimiento (`record_mode`) y eventos de tarjeta (`getAlertEvents`). | SDK |
+| 5.2 | **Descargar un tramo** de la microSD a MP4 (marcar inicio/fin en la línea de tiempo; reusa `Mp4Recorder`). | App + SDK |
+| 5.3 | Velocidad 2x/4x/8x y saltar al evento anterior/siguiente. | SDK |
+| 5.4 | **Barra de uso** de la tarjeta (% usado, sobrescritura circular) y **Formatear microSD** (`formatTfCard`, con confirmación). | SDK |
+
+## Fase 6 — Ajustes del diseño
+
+| # | Tarea | Origen |
+|---|-------|--------|
+| 6.1 | **Zonas de actividad**: dibujar rectángulo sobre el video (`setMotionRect`). | SDK |
+| 6.2 | Badge **"N actualizaciones"** e INSTALAR en la lista de dispositivos (reusa FirmwareUpdate). | Nube + SDK |
+| 6.3 | **Reiniciar cámara** (`rebootDevice`). | SDK |
+| 6.4 | **Sirena / luz de alerta** solo si el modelo la tiene (`setAlertLightStatus`); si no, no se muestra. | SDK |
+| 6.5 | Bloqueo de la app con huella (BiometricPrompt), además del PIN por cámara. | App |
+
+## Fase 7 — Plataforma y calidad
+
+| # | Tarea | Origen |
+|---|-------|--------|
+| 7.1 | Reconexión automática P2P con espera creciente cuando la cámara se cae. | App |
+| 7.2 | Conexión LAN directa (sin relay) → menos retraso y 2K. | SDK |
+| 7.3 | Widget de Android con la última captura por cámara. | App |
+| 7.4 | Fire 7 como monitor fijo (modo kiosco) — requiere las .so armeabi-v7a del APK universal de Kami. | App |
+| 7.5 | Respaldo de eventos de la IA a una carpeta / NAS. | App |
+| 7.6 | IA: dirección del movimiento ("se acerca/se aleja") y tiempo en escena. | App |
+| 7.7 | Commit + release en GitHub de cada fase (0.3.0 y 0.3.1 siguen sin commit). | — |
+
+## Fuera de alcance por ahora
+
+- **PTZ real** (cámaras fijas) → zoom digital simulado.
+- "Abrir" cerradura, contactos de emergencia, geofencing, plan de nube Aegis: no hay hardware ni API.

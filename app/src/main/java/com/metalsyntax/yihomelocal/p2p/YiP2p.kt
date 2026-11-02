@@ -29,7 +29,12 @@ object YiP2p {
     fun init() {
         if (ready) return
         // en Yi Home las carga código fuera del SDK; IOTCAPIs antes que AVAPIs (dependencia)
-        listOf("PPPP_API", "IOTCAPIs", "sCHL", "AVAPIs").forEach(System::loadLibrary)
+        try {
+            listOf("PPPP_API", "IOTCAPIs", "sCHL", "AVAPIs").forEach(System::loadLibrary)
+        } catch (e: UnsatisfiedLinkError) {
+            // p. ej. tablet de 32 bits con un APK que solo trae las .so de Yi en arm64
+            throw IllegalStateException("Este equipo (${android.os.Build.SUPPORTED_ABIS.joinToString()}) no tiene las librerías P2P de Yi", e)
+        }
         com.xiaoyi.log.AntsLog.setDebug(com.metalsyntax.yihomelocal.BuildConfig.DEBUG)
         PPPP_APIs.PPPP_Initialize(byteArrayOf(0), 12)
         TutkCamera.init()
@@ -127,6 +132,32 @@ object YiP2p {
         }
     }
 
+    /** Evento relevante guardado por la propia cámara en la microSD (movimiento/persona…): inicio epoch ms, duración, tipo. */
+    data class SdAlert(val start: Long, val seconds: Int, val category: Int) { val end get() = start + maxOf(seconds, 6) * 1000L }
+
+    /**
+     * Eventos de alerta de la microSD (TNP IOCTRL 23558, getAlertEvents del SDK) entre [from] y [to] (epoch ms).
+     * ponytail: se asume starttime en epoch segundos (como AlertEvent de Kami); firmwares viejos no responden → null.
+     */
+    suspend fun sdAlerts(c: AntsCamera, from: Long, to: Long): List<SdAlert>? = withTimeoutOrNull(10_000) {
+        suspendCancellableCoroutine { k ->
+            c.commandHelper.getAlertEvents((from / 1000).toInt(), (to / 1000).toInt(), object : CameraCommandHelper.OnGetAlertsCommandResponse {
+                override fun onEvents(list: MutableList<com.tutk.IOTC.AlertEvent>?, n: Int) {
+                    if (k.isActive) k.resume(list.orEmpty().map { SdAlert(it.starttime * 1000L, it.duration, it.category) }.sortedBy { it.start })
+                }
+                override fun onError(i: Int) { if (k.isActive) k.resume(null) }
+            })
+        }
+    }
+
+    /**
+     * Modo de grabación en la microSD. El SDK manda `!soloMovimiento` (IOCTRL 4874), así que record_mode 1 = continua
+     * 24 h y 0 = solo con movimiento (por eso en la línea de tiempo solo salían los eventos).
+     */
+    fun isContinuous(i: DeviceInfo) = i.record_mode.toInt() == 1
+
+    suspend fun setContinuous(c: AntsCamera, on: Boolean) = cmd(c) { setMotionRecord(!on, it) }
+
     /** Reproduce la microSD desde [ms] (epoch ms) en la misma conexión; [goLive] vuelve al vivo. */
     fun playSd(c: AntsCamera, ms: Long) = c.seekTo(ms)
 
@@ -164,7 +195,7 @@ object YiP2p {
      */
     fun isOnline(cam: CameraDevice): Boolean? {
         if (cam.tnpServer.isEmpty()) return null
-        init()
+        runCatching { init() }.onFailure { return null }
         val last = IntArray(1)
         return when (runCatching { PPPP_APIs.PPPP_CheckDevOnline(cam.p2pId, cam.tnpServer, 2, last) }.getOrDefault(-1)) {
             1 -> true

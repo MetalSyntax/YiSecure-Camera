@@ -69,7 +69,7 @@ fun MonitorScreen(
                 Icon(Icons.Default.FullscreenExit, "Salir de pantalla completa", tint = OnAccent)
             }
         }
-        if (!full) Mono("Toca una cámara para abrirla · ⛶ para modo monitor", MutedText, 10.sp, Modifier.padding(16.dp))
+        if (!full) Mono("Toca una cámara para abrirla · pantalla completa = modo monitor", MutedText, 10.sp, Modifier.padding(16.dp))
     }
 }
 

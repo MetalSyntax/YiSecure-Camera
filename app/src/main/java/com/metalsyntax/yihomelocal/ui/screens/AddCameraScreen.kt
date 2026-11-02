@@ -369,7 +369,7 @@ private fun WifiPicker(selected: String, onPick: (String) -> Unit) {
                 Spacer(Modifier.width(10.dp))
                 Text(n.SSID, color = if (is5g) GhostText else PureWhite, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1)
                 @Suppress("DEPRECATION")
-                Mono(when { is5g -> "5 GHz ✕"; n.SSID == current -> "ACTUAL"; else -> "${WifiManager.calculateSignalLevel(n.level, 4) + 1}/4" }, MutedText, 10.sp)
+                Mono(when { is5g -> "5 GHz NO"; n.SSID == current -> "ACTUAL"; else -> "${WifiManager.calculateSignalLevel(n.level, 4) + 1}/4" }, MutedText, 10.sp)
             }
         }
     }

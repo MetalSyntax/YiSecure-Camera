@@ -7,10 +7,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -18,6 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.metalsyntax.yihomelocal.BuildConfig
 import com.metalsyntax.yihomelocal.data.CameraDevice
+import com.metalsyntax.yihomelocal.data.YiCloud
+import com.metalsyntax.yihomelocal.p2p.YiP2p
+import com.xiaoyi.camera.sdk.AntsCamera
 import com.metalsyntax.yihomelocal.ui.components.*
 import com.metalsyntax.yihomelocal.ui.theme.*
 
@@ -31,11 +38,21 @@ fun SettingsScreen(
     onAddCamera: () -> Unit,
     onEditCamera: (CameraDevice) -> Unit,
     onLogout: () -> Unit,
+    silent: Boolean = false,
+    onSilent: (Boolean) -> Unit = {},
 ) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val store = remember { com.metalsyntax.yihomelocal.data.Store(ctx) }
+    val scope = rememberCoroutineScope()
+    var notify by remember { mutableStateOf(store.notify && com.metalsyntax.yihomelocal.data.AlertNotifier.canNotify(ctx)) }
+    var testMsg by remember { mutableStateOf<String?>(null) }
+    fun setNotify(on: Boolean) { notify = on; store.notify = on; com.metalsyntax.yihomelocal.data.AlertNotifier.schedule(ctx, on) }
+    val permission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok -> setNotify(ok) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         AppHeader("Ajustes", "Cuenta Yi · región ${region.uppercase()}")
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SectionTitle("Gestión de dispositivos") { Mono("${cameras.size} CÁMARAS", MutedText, 10.sp) }
+            SectionTitle("Gestión de dispositivos", Icons.Default.Videocam) { Mono("${cameras.size} CÁMARAS", MutedText, 10.sp) }
             Column(Modifier.fillMaxWidth().panel()) {
                 cameras.forEach { cam ->
                     val on = if (cam.uid in online) online[cam.uid] ?: cam.online else null
@@ -52,10 +69,31 @@ fun SettingsScreen(
                     HorizontalDivider(color = BorderSubtle)
                 }
                 TextButton(onClick = onAddCamera, modifier = Modifier.fillMaxWidth().padding(4.dp)) {
-                    Mono("⊕  AÑADIR NUEVA CÁMARA", PureWhite, 12.sp)
+                    Icon(Icons.Default.AddCircleOutline, null, tint = CrimsonRed, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Mono("AÑADIR NUEVA CÁMARA", PureWhite, 12.sp)
                 }
             }
-            SectionTitle("Apariencia")
+            SectionTitle("Alertas y notificaciones", Icons.Default.NotificationsActive)
+            Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Toggle("Notificaciones en el teléfono", "Revisa la nube de Yi cada 15 min y avisa de alertas nuevas con su imagen", notify) { on ->
+                    if (on && !com.metalsyntax.yihomelocal.data.AlertNotifier.canNotify(ctx) && android.os.Build.VERSION.SDK_INT >= 33)
+                        permission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    else setNotify(on)
+                }
+                Toggle("Modo silencioso", "Apaga las alertas push de todas las cámaras (también en Kami/Yi Home) y los avisos de esta app", silent, onSilent)
+                if (notify && !silent) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(testMsg ?: "Revisar ahora sin esperar los 15 min", color = MutedText, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        testMsg = "Revisando…"
+                        scope.launch {
+                            testMsg = runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.metalsyntax.yihomelocal.data.AlertNotifier.check(ctx) } }
+                                .fold({ if (it == 0) "Sin alertas nuevas" else "$it alertas nuevas avisadas" }, { "Error: ${it.message}" })
+                        }
+                    }) { Mono("REVISAR", CrimsonRed, 11.sp) }
+                }
+            }
+            SectionTitle("Apariencia", Icons.Default.Palette)
             Row(Modifier.fillMaxWidth().panel(4)) {
                 listOf(0 to "SISTEMA", 1 to "OSCURO", 2 to "CLARO").forEach { (v, label) ->
                     val sel = theme == v
@@ -67,7 +105,7 @@ fun SettingsScreen(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            SecondaryButton("⏻  Cerrar sesión", color = CrimsonRed, onClick = onLogout)
+            SecondaryButton("Cerrar sesión", color = CrimsonRed, icon = Icons.Default.PowerSettingsNew, onClick = onLogout)
             Mono("YI SECURE v${BuildConfig.VERSION_NAME} · SDK Kami Home 4.9.9", GhostText, 10.sp, Modifier.align(Alignment.CenterHorizontally).padding(16.dp))
         }
     }
@@ -80,8 +118,21 @@ fun SettingsScreen(
 @Composable
 fun EditCameraScreen(
     camera: CameraDevice, busy: Boolean, hasPin: Boolean, onBack: () -> Unit, onRename: (String) -> Unit, onDelete: () -> Unit,
-    onPin: (String?) -> Unit,
+    onPin: (String?) -> Unit, cloud: YiCloud? = null, account: YiCloud.Session? = null,
 ) {
+    // conexión P2P propia (sin video en pantalla) para leer y cambiar los ajustes que guarda la cámara
+    var cam by remember(camera.uid) { mutableStateOf<AntsCamera?>(null) }
+    DisposableEffect(camera.uid) {
+        val c = runCatching {
+            YiP2p.open(camera, YiP2p.QUALITY_SD, false, object : YiP2p.Listener() {
+                override fun onState(text: String, connected: Boolean) {}
+                override fun onFrame(f: com.tutk.IOTC.AVFrame) {}
+                override fun onAudio(f: com.tutk.IOTC.AVFrame) {}
+            })
+        }.getOrNull()
+        cam = c
+        onDispose { cam = null; c?.let(YiP2p::close) }
+    }
     var name by remember(camera.uid) { mutableStateOf(camera.name) }
     var pin by remember(camera.uid) { mutableStateOf("") }
     var pinMsg by remember(camera.uid) { mutableStateOf<String?>(null) }
@@ -97,13 +148,15 @@ fun EditCameraScreen(
             }
         }
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SectionTitle("Nombre")
+            SectionTitle("Nombre", Icons.Default.Edit)
             Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Field(name, { name = it.take(32) }, "Nombre")
                 PrimaryButton("Guardar nombre", enabled = !busy && name.isNotBlank() && name.trim() != camera.name) { onRename(name.trim()) }
             }
 
-            SectionTitle("PIN") { Mono(if (hasPin) "ACTIVO" else "SIN PIN", if (hasPin) CrimsonRed else MutedText, 10.sp) }
+            if (cloud != null && account != null) CameraSettings(camera, cam, cloud, account)
+
+            SectionTitle("PIN", Icons.Default.Lock) { Mono(if (hasPin) "ACTIVO" else "SIN PIN", if (hasPin) CrimsonRed else MutedText, 10.sp) }
             Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     if (hasPin) "Se pide al abrir o editar esta cámara; en el monitor se ve bloqueada hasta abrirla."
@@ -118,13 +171,9 @@ fun EditCameraScreen(
                 pinMsg?.let { Text(it, color = MutedText, fontSize = 12.sp) }
             }
 
-            SectionTitle("Información")
-            Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Mono("UID ${camera.uid}", MutedText, 11.sp)
-                if (camera.localIp.isNotEmpty()) Mono("IP ${camera.localIp}", MutedText, 11.sp)
-            }
+            CameraDetails(camera)
 
-            SectionTitle("Eliminar")
+            SectionTitle("Eliminar", Icons.Default.DeleteOutline)
             Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     "Se quita de tu cuenta Yi/Kami (también de la app oficial). Para volver a usarla hay que resetearla y emparejarla.",

@@ -13,7 +13,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Videocam
@@ -34,6 +36,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.metalsyntax.yihomelocal.data.Alert
 import com.metalsyntax.yihomelocal.data.CameraDevice
+import com.metalsyntax.yihomelocal.data.LocalEvent
+import com.metalsyntax.yihomelocal.data.LocalEvents
 import com.metalsyntax.yihomelocal.data.YiCloud
 import com.metalsyntax.yihomelocal.ui.components.*
 import com.metalsyntax.yihomelocal.ui.theme.*
@@ -69,6 +73,15 @@ fun EventsScreen(cloud: YiCloud, session: YiCloud.Session, cameras: List<CameraD
     var kind by remember { mutableStateOf<String?>(null) }
     var camUid by remember { mutableStateOf<String?>(null) }
     var open by remember { mutableStateOf<Alert?>(null) }
+    // detecciones de la IA del teléfono (guardadas al mirar el vivo)
+    val ctx = LocalContext.current
+    var aiOnly by remember { mutableStateOf(false) }
+    var aiKind by remember { mutableStateOf<String?>(null) }
+    val local = remember(reload, aiOnly) { LocalEvents.all(ctx, cameras.map { it.uid }) }
+    var openLocal by remember { mutableStateOf<LocalEvent?>(null) }
+    // nuevos = posteriores a la última vez que se marcó "leído"
+    val store = remember { com.metalsyntax.yihomelocal.data.Store(ctx) }
+    var seen by remember { mutableLongStateOf(store.eventsSeen) }
 
     LaunchedEffect(reload) {
         error = null
@@ -85,38 +98,106 @@ fun EventsScreen(cloud: YiCloud, session: YiCloud.Session, cameras: List<CameraD
             IconButton(onClick = { reload++ }) { Icon(Icons.Default.Refresh, "Actualizar", tint = PureWhite) }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Chip("TODOS", kind == null) { kind = null }
-            alerts.orEmpty().map { it.kind }.distinct().forEach { k -> Chip(k.uppercase(), kind == k) { kind = k } }
+            Chip("TODOS", kind == null && !aiOnly, Icons.Default.Apps) { kind = null; aiOnly = false }
+            Chip("IA DEL TELÉFONO (${local.size})", aiOnly, Icons.Default.Psychology) { aiOnly = true }
+            if (!aiOnly) alerts.orEmpty().map { it.kind }.distinct().forEach { k -> Chip(k.uppercase(), kind == k, kindIcon(k)) { kind = k } }
+        }
+        val newCount = alerts.orEmpty().count { it.time > seen } + local.count { it.time > seen }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (newCount > 0) Box(Modifier.size(8.dp).clip(CircleShape).background(CrimsonRed))
+            Spacer(Modifier.width(6.dp))
+            Mono(if (newCount > 0) "$newCount EVENTOS NUEVOS" else "SIN EVENTOS NUEVOS", if (newCount > 0) PureWhite else MutedText, 11.sp, Modifier.weight(1f))
+            if (newCount > 0) Row(
+                Modifier.clip(RoundedCornerShape(4.dp)).background(CardBackground).clickable {
+                    seen = System.currentTimeMillis(); store.eventsSeen = seen
+                }.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.DoneAll, null, tint = MutedText, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(4.dp))
+                Mono("MARCAR LEÍDO", MutedText, 10.sp)
+            }
+        }
+        if (aiOnly && local.isNotEmpty()) Row(
+            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Chip("TODAS", aiKind == null) { aiKind = null }
+            local.map { it.kind }.distinct().forEach { k -> Chip(k, aiKind == k, kindIcon(k)) { aiKind = k } }
         }
         if (cameras.size > 1) Row(
             Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Chip("TODAS LAS CÁMARAS", camUid == null) { camUid = null }
-            cameras.forEach { c -> Chip(c.name.uppercase(), camUid == c.uid) { camUid = c.uid } }
+            Chip("TODAS LAS CÁMARAS", camUid == null, Icons.Default.GridView) { camUid = null }
+            cameras.forEach { c -> Chip(c.name.uppercase(), camUid == c.uid, Icons.Default.Videocam) { camUid = c.uid } }
         }
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            if (aiOnly) {
+                val shown = local.filter { (aiKind == null || it.kind == aiKind) && (camUid == null || it.uid == camUid) }
+                if (shown.isEmpty()) item {
+                    Text("Sin detecciones todavía. Abre una cámara con \"IA ON\": el teléfono reconoce personas, vehículos, paquetes, animales, sombras y movimiento y los guarda aquí.",
+                        color = MutedText, fontSize = 13.sp)
+                }
+                shown.groupBy { dayOf(it.time) }.forEach { (d, evs) ->
+                    item(key = "d$d") { DayHeader(d, evs.size) }
+                    items(evs, key = { "${it.uid}${it.time}${it.title}" }) { e -> LocalEventCard(e, names[e.uid] ?: e.uid, e.time > seen) { openLocal = e } }
+                }
+                return@LazyColumn
+            }
             error?.let { e -> item { Text(e, color = CrimsonRed, fontSize = 13.sp) } }
             if (alerts != null && list.isEmpty()) item {
                 Text("Sin alertas en este periodo. La cámara sube una alerta a la nube de Yi cuando detecta movimiento con las alertas activadas.",
                     color = MutedText, fontSize = 13.sp)
             }
-            items(list, key = { it.id.ifEmpty { "${it.uid}${it.time}" } }) { a ->
-                AlertRow(a, names[a.uid] ?: a.uid) { open = a }
+            list.groupBy { dayOf(it.time) }.forEach { (d, al) ->
+                item(key = "d$d") { DayHeader(d, al.size) }
+                items(al, key = { it.id.ifEmpty { "${it.uid}${it.time}" } }) { a ->
+                    AlertRow(a, names[a.uid] ?: a.uid, a.time > seen) { open = a }
+                }
             }
         }
     }
 
     open?.let { a -> AlertDetailDialog(a, names[a.uid] ?: a.uid) { open = null } }
+    openLocal?.let { e -> LocalEventDialog(e, names[e.uid] ?: e.uid, onDismiss = { openLocal = null }, onSd = null) }
+}
+
+/** Tarjeta del historial (diseño "Eventos"): foto con las cajas, hora, cámara, tipo y descripción. */
+@Composable
+private fun LocalEventCard(e: LocalEvent, camName: String, isNew: Boolean, onOpen: () -> Unit) {
+    val img = remember(e.file) { runCatching { BitmapFactory.decodeFile(e.file) }.getOrNull() }
+    Column(Modifier.fillMaxWidth().panel().clickable(onClick = onOpen)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
+            img?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+            if (isNew) Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) { StatusBadge(true, "NUEVO") }
+            Mono(camName.uppercase(), OnAccent, 10.sp, Modifier.align(Alignment.TopStart).padding(8.dp).background(Color.Black.copy(alpha = 0.75f)).padding(horizontal = 6.dp, vertical = 2.dp))
+            Row(Modifier.align(Alignment.BottomStart).padding(8.dp).background(Color.Black.copy(alpha = 0.75f)).padding(horizontal = 6.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Schedule, null, tint = OnAccent, modifier = Modifier.size(12.dp)); Spacer(Modifier.width(4.dp))
+                Mono(SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(e.time)), OnAccent, 11.sp)
+            }
+        }
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Mono(SimpleDateFormat("dd/MM HH:mm", Locale.US).format(Date(e.time)), MutedText, 11.sp)
+                Text("  ${e.title}", color = PureWhite, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
+                Row(Modifier.clip(RoundedCornerShape(2.dp)).background(CrimsonRed).padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(kindIcon(e.kind), null, tint = OnAccent, modifier = Modifier.size(12.dp)); Spacer(Modifier.width(4.dp))
+                    Mono(e.kind, OnAccent, 10.sp)
+                }
+            }
+            Text(e.desc, color = MutedText, fontSize = 13.sp)
+        }
+    }
 }
 
 /** Fila del "Registro de incidentes": miniatura + tipo + cámara + hora. */
 @Composable
-fun AlertRow(a: Alert, camName: String, onClick: () -> Unit) {
+fun AlertRow(a: Alert, camName: String, isNew: Boolean = false, onClick: () -> Unit) {
     var img by remember(a.picUrl) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(a.picUrl) { img = alertImage(a) }
     Row(Modifier.fillMaxWidth().panel().clickable(onClick = onClick).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -127,7 +208,11 @@ fun AlertRow(a: Alert, camName: String, onClick: () -> Unit) {
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(a.kind, color = PureWhite, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(kindIcon(a.kind), null, tint = CrimsonRed, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp))
+                Text(a.kind, color = PureWhite, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                if (isNew) { Spacer(Modifier.width(6.dp)); Box(Modifier.size(7.dp).clip(CircleShape).background(CrimsonRed)) }
+            }
             Mono(camName.uppercase(), MutedText, 10.sp)
         }
         Mono(SimpleDateFormat("dd/MM HH:mm:ss", Locale.US).format(Date(a.time)), MutedText, 10.sp)
@@ -177,17 +262,51 @@ fun AlertDetailDialog(a: Alert, camName: String, onDismiss: () -> Unit) {
                     loadingClip = false
                 }
             } else if (a.videoUrl.isEmpty()) Text("Esta alerta solo trae imagen (la nube de Yi no guardó clip).", color = MutedText, fontSize = 12.sp)
+            val text = "${a.kind} · $camName · " + SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.US).format(Date(a.time))
+            // comparte el clip si ya se descargó; si no, la imagen
+            if (clip != null || img != null) SecondaryButton(if (clip != null) "Compartir clip" else "Compartir imagen", icon = Icons.Default.Share) {
+                runCatching {
+                    clip?.let { com.metalsyntax.yihomelocal.data.Share.file(ctx, it, "video/mp4", text) }
+                        ?: img?.let { com.metalsyntax.yihomelocal.data.Share.image(ctx, it, "${a.uid}_${a.time}", text) }
+                }.onFailure { clipError = "No se pudo compartir: ${it.message}" }
+            }
             SecondaryButton("Cerrar", onClick = onDismiss)
         }
     }
 }
 
 @Composable
-private fun Chip(text: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
+private fun Chip(text: String, selected: Boolean, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, onClick: () -> Unit) {
+    Row(
         Modifier.clip(RoundedCornerShape(4.dp))
             .background(if (selected) CrimsonRed else CardBackground)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
-    ) { Mono(text, if (selected) OnAccent else MutedText, 11.sp) }
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        icon?.let { Icon(it, null, tint = if (selected) OnAccent else MutedText, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(6.dp)) }
+        Mono(text, if (selected) OnAccent else MutedText, 11.sp)
+    }
+}
+
+/** Medianoche local del día de [t] (para agrupar por día). */
+private fun dayOf(t: Long) = java.util.Calendar.getInstance().apply {
+    timeInMillis = t; set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+    set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+/** Encabezado "Hoy 02 de noviembre · N detecciones", como el diseño "Eventos". */
+@Composable
+private fun DayHeader(day: Long, count: Int) {
+    val today = dayOf(System.currentTimeMillis())
+    val name = when (day) { today -> "Hoy"; today - 86_400_000L -> "Ayer"; else -> SimpleDateFormat("EEEE", Locale("es")).format(Date(day)).replaceFirstChar { it.uppercase() } }
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(if (day == today) Icons.Default.CalendarToday else Icons.Default.History, null, tint = CrimsonRed, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(name, color = PureWhite, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.width(8.dp))
+        Text(SimpleDateFormat("d 'de' MMMM, yyyy", Locale("es")).format(Date(day)), color = MutedText, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        Mono("$count ${if (count == 1) "DETECCIÓN" else "DETECCIONES"}", MutedText, 10.sp,
+            Modifier.clip(RoundedCornerShape(2.dp)).background(CardBackground).padding(horizontal = 6.dp, vertical = 3.dp))
+    }
 }

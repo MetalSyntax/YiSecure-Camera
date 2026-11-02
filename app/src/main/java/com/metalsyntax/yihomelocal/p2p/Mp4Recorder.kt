@@ -8,12 +8,14 @@ import java.io.File
 import java.nio.ByteBuffer
 
 /**
- * Graba el stream H.264/H.265 tal como llega (sin recodificar) a un MP4. Solo video:
- * ponytail: el audio AAC de la cámara no se mezcla; añadirlo si hace falta (segunda pista con csd del ADTS).
+ * Graba el stream H.264/H.265 y el audio AAC tal como llegan (sin recodificar) a un MP4.
+ * La pista de audio se crea si antes del primer I-frame ya llegó audio con cabecera ADTS (lo normal: llega varias veces por segundo).
  */
 class Mp4Recorder(val file: File) {
     private var muxer: MediaMuxer? = null
     private var track = -1
+    private var audioTrack = -1
+    private var audioCfg: AudioDecoder.Adts? = null
     private var startUs = -1L
     private var lastUs = -1L
     var frames = 0; private set
@@ -38,20 +40,57 @@ class Mp4Recorder(val file: File) {
             val fmt = MediaFormat.createVideoFormat(mime, f.videoWidth, f.videoHeight)
             if (hevc) fmt.setByteBuffer("csd-0", ByteBuffer.wrap(params.flatMap { withStart(data, it).toList() }.toByteArray()))
             else params.forEachIndexed { i, r -> if (i < 2) fmt.setByteBuffer("csd-$i", ByteBuffer.wrap(withStart(data, r))) }
-            muxer = MediaMuxer(file.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4).also { track = it.addTrack(fmt); it.start() }
+            muxer = MediaMuxer(file.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4).also { m ->
+                track = m.addTrack(fmt)
+                audioCfg?.let { a ->
+                    val af = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, a.rate, a.channels)
+                    af.setByteBuffer("csd-0", ByteBuffer.wrap(a.csd()))
+                    audioTrack = m.addTrack(af)
+                }
+                m.start()
+            }
         }
         // MPEG4Writer espera una NAL por muestra en Annex-B: se quitan SPS/PPS/SEI y se escribe la porción de video
         val slices = nals.filterNot { isParam(it, data, hevc) || isSei(it, data, hevc) }
         if (slices.isEmpty()) return
         val sample = slices.flatMap { withStart(data, it).toList() }.toByteArray()
-        val now = System.nanoTime() / 1000
-        if (startUs < 0) startUs = now
-        var pts = now - startUs
+        var pts = ptsNow()
         if (pts <= lastUs) pts = lastUs + 1
         lastUs = pts
         val info = MediaCodec.BufferInfo().apply { set(0, sample.size, pts, if (f.isIFrame) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0) }
         muxer!!.writeSampleData(track, ByteBuffer.wrap(sample), info)
         frames++
+    }
+
+    private var lastAudioUs = -1L
+
+    /** Audio AAC con ADTS: antes de arrancar solo se aprende el formato; después se escriben las tramas sin la cabecera. */
+    @Synchronized
+    fun writeAudio(f: AVFrame) {
+        if (closed) return
+        val data = f.frmData ?: return
+        val len = if (f.frmSize in 1..data.size) f.frmSize else data.size
+        val first = AudioDecoder.adts(data, len) ?: return
+        val m = muxer
+        if (m == null) { audioCfg = first; return }
+        if (audioTrack < 0 || startUs < 0) return
+        var off = 0
+        while (off < len) {
+            val h = AudioDecoder.adts(data, len, off) ?: break
+            val end = if (h.frameLen in (h.headerLen + 1)..(len - off)) off + h.frameLen else len
+            var pts = System.nanoTime() / 1000 - startUs
+            if (pts <= lastAudioUs) pts = lastAudioUs + 1
+            lastAudioUs = pts
+            val info = MediaCodec.BufferInfo().apply { set(0, end - off - h.headerLen, pts, 0) }
+            m.writeSampleData(audioTrack, ByteBuffer.wrap(data, off + h.headerLen, end - off - h.headerLen).slice(), info)
+            off = end
+        }
+    }
+
+    private fun ptsNow(): Long {
+        val now = System.nanoTime() / 1000
+        if (startUs < 0) startUs = now
+        return now - startUs
     }
 
     /** true si quedó un MP4 válido. */
