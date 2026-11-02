@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">YiSecure</string>
+    <string name="widget_desc">Última imagen de tu cámara principal</string>
 </resources>

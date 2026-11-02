@@ -113,6 +113,11 @@ fun CameraDetailScreen(
     var frameSec by remember { mutableLongStateOf(0L) }
     // cuadros por segundo reales (se cuentan al llegar) y estado leído de la cámara (Wi-Fi, batería, microSD)
     val frameCount = remember { java.util.concurrent.atomic.AtomicInteger() }
+    // reconexión automática: último cuadro recibido e intentos seguidos (espera 2, 4, 8… hasta 60 s)
+    val lastFrame = remember { java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis()) }
+    var retries by remember { mutableIntStateOf(0) }
+    var sdPaused by remember { mutableStateOf(false) }
+    var link by remember { mutableStateOf(YiP2p.Link.UNKNOWN) }
     var fps by remember { mutableIntStateOf(0) }
     var info by remember { mutableStateOf<DeviceInfo?>(null) }
     var picker by remember { mutableStateOf(false) }
@@ -128,10 +133,30 @@ fun CameraDetailScreen(
     var openEvent by remember { mutableStateOf<LocalEvent?>(null) }
     LaunchedEffect(Unit) {
         val f = SimpleDateFormat("HH:mm:ss", Locale.US)
-        while (true) { clock = f.format(Date()); fps = frameCount.getAndSet(0); delay(1000) }
+        while (true) {
+            clock = f.format(Date()); fps = frameCount.getAndSet(0)
+            if (fps > 0) { lastFrame.set(System.currentTimeMillis()); if (retries > 0) retries = 0 }
+            delay(1000)
+        }
+    }
+    LaunchedEffect(session) {
+        lastFrame.set(System.currentTimeMillis())
+        delay(20_000) // margen para conectar la primera vez
+        while (true) {
+            delay(5_000)
+            val stalled = System.currentTimeMillis() - lastFrame.get() > 15_000 && !sdPaused
+            if (stalled || status.startsWith("Error")) {
+                val wait = minOf(60, 2 shl minOf(retries, 5))
+                for (left in wait downTo 1) { status = "Sin señal · reconectando en $left s…"; delay(1000) }
+                retries++; sdAt = null; session++ // reabre la conexión P2P (LiveView se reinicia con session)
+                return@LaunchedEffect
+            }
+        }
     }
     LaunchedEffect(message) { if (message != null) { delay(4000); message = null } }
     val live = status.startsWith("En vivo") || status.startsWith("Conectado")
+    // tipo de conexión una vez en vivo (el SDK lo deja en previousConnectType)
+    LaunchedEffect(cam, live) { val c = cam; if (c != null && live) link = YiP2p.link(ctx, c, camera) }
     val resolution = Regex("(\\d+)×(\\d+)").find(status)?.groupValues?.get(2)?.let { "${it}p" }
 
     LaunchedEffect(cam) {
@@ -207,7 +232,6 @@ fun CameraDetailScreen(
         }
     }
 
-    var sdPaused by remember { mutableStateOf(false) }
     var dlLeft by remember { mutableIntStateOf(0) } // segundos que faltan de la descarga de la microSD
     var sdStarted by remember { mutableStateOf(false) }
     LaunchedEffect(live) {
@@ -342,6 +366,11 @@ fun CameraDetailScreen(
                         StatusBadge(true, "REC %02d:%02d".format(secs / 60, secs % 60))
                     }
                     if (live && fps > 0) VideoChip(listOfNotNull("$fps FPS", resolution).joinToString(" • "))
+                    if (live && link != YiP2p.Link.UNKNOWN) Row(Modifier.videoChrome(), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(if (link == YiP2p.Link.WIFI_LOCAL) Icons.Default.Wifi else Icons.Default.Public, null, tint = OnAccent, modifier = Modifier.size(12.dp))
+                        Spacer(Modifier.width(4.dp)); Mono(link.label, OnAccent, 10.sp)
+                    }
+                    if (retries > 0 && !live) VideoChip("INTENTO ${retries + 1}")
                     if (zoom > 1.05f) VideoChip("%.1fx".format(zoom))
                 }
                 Column(Modifier.align(Alignment.TopEnd).padding(10.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {

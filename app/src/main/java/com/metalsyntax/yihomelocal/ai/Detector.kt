@@ -124,7 +124,8 @@ data class Finding(val kind: Kind, val title: String, val desc: String)
  * un vehículo que se mueve o se estaciona, una mascota que pasa o se queda. Un objeto por tipo (el más seguro).
  */
 class Sentinel {
-    private class Track(val first: Long, var last: Long, val startX: Float, var x: Float) {
+    /** [startArea]/[area] = tamaño de la caja: si crece se acerca a la cámara, si se achica se aleja. */
+    private class Track(val first: Long, var last: Long, val startX: Float, var x: Float, val startArea: Float = 0f, var area: Float = 0f) {
         val reported = HashSet<String>()
         fun seconds(now: Long) = ((now - first) / 1000).toInt()
     }
@@ -139,7 +140,8 @@ class Sentinel {
         // se fue: más de 15 s sin verlo
         tracks.entries.removeAll { (k, t) ->
             val gone = now - t.last > 15_000
-            if (gone && k == Kind.PERSON && t.seconds(t.last) >= 3) out += Finding(k, "Persona salió", "Estuvo ${t.seconds(t.last)} s en escena")
+            if (gone && k == Kind.PERSON && t.seconds(t.last) >= 3) out += Finding(k, "Persona salió",
+                "Estuvo ${t.seconds(t.last)} s en escena · salió por ${side(t.x)}")
             gone
         }
 
@@ -147,7 +149,8 @@ class Sentinel {
             val cx = d.box.centerX()
             val t = tracks[k]
             if (t == null) {
-                tracks[k] = Track(now, now, cx, cx)
+                val a0 = d.box.width() * d.box.height()
+                tracks[k] = Track(now, now, cx, cx, a0, a0)
                 out += when (k) {
                     Kind.PERSON -> Finding(k, "Persona detectada", "Entró por ${side(cx)} · confianza ${(d.score * 100).toInt()} %")
                     Kind.VEHICLE -> Finding(k, "Vehículo detectado", "${name(d.name)} · confianza ${(d.score * 100).toInt()} %")
@@ -155,11 +158,16 @@ class Sentinel {
                 }
                 return@forEach
             }
-            t.last = now; t.x = cx
+            t.last = now; t.x = cx; t.area = d.box.width() * d.box.height()
             val secs = t.seconds(now)
             fun once(tag: String, f: () -> Finding) { if (t.reported.add(tag)) out += f() }
             when (k) {
-                Kind.PERSON -> if (secs >= 20) once("loiter") { Finding(k, "Merodeo", "Persona en escena más de $secs s") }
+                Kind.PERSON -> {
+                    if (secs >= 20) once("loiter") { Finding(k, "Merodeo", "Persona en escena más de $secs s") }
+                    // dirección por el tamaño de la caja (≥ 1,8x más grande = se acercó; ≤ 0,5x = se alejó)
+                    if (t.startArea > 0f && t.area / t.startArea >= 1.8f) once("near") { Finding(k, "Persona se acerca", "Se acercó a la cámara en $secs s") }
+                    if (t.startArea > 0f && t.area / t.startArea <= 0.5f) once("far") { Finding(k, "Persona se aleja", "Se alejó de la cámara en $secs s") }
+                }
                 Kind.VEHICLE -> {
                     if (abs(cx - t.startX) > 0.15f) once("moving") { Finding(k, "Vehículo en movimiento", "Cruzó hacia ${if (cx > t.startX) "la derecha" else "la izquierda"}") }
                     else if (secs >= 30) once("parked") { Finding(k, "Vehículo estacionado", "Quieto más de $secs s") }

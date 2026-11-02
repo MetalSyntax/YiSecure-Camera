@@ -84,7 +84,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 var selected by remember { mutableStateOf<CameraDevice?>(null) }
                 var editing by remember { mutableStateOf<CameraDevice?>(null) }
                 var adding by remember { mutableStateOf(false) }
-                var tab by remember { mutableIntStateOf(intent.getIntExtra(com.metalsyntax.yihomelocal.data.AlertNotifier.EXTRA_TAB, 0)) }
+                var tab by remember { mutableIntStateOf(intent.getIntExtra(com.metalsyntax.yihomelocal.data.AlertNotifier.EXTRA_TAB, if (store.kiosk) 1 else 0)) }
                 // toque en una notificación con la app abierta → pestaña Eventos
                 DisposableEffect(Unit) {
                     val l = androidx.core.util.Consumer<android.content.Intent> { i ->
@@ -92,7 +92,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     }
                     addOnNewIntentListener(l); onDispose { removeOnNewIntentListener(l) }
                 }
-                var monitorFull by remember { mutableStateOf(false) }
+                var monitorFull by remember { mutableStateOf(store.kiosk) }
+                var kiosk by remember { mutableStateOf(store.kiosk) }
+                // monitor fijo: pantalla siempre encendida mientras la app está delante
+                DisposableEffect(kiosk) {
+                    if (kiosk) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    onDispose { }
+                }
                 var busy by remember { mutableStateOf(false) }
                 var error by remember { mutableStateOf<String?>(null) }
                 var silent by remember { mutableStateOf(store.silent) }
@@ -262,6 +269,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     cameras, online, store.region, theme, onTheme = { theme = it; store.theme = it },
                                     onAddCamera = { adding = true }, onEditCamera = { c -> guarded(c) { editing = c } },
                                     silent = silent, onSilent = ::setSilent,
+                                    kiosk = kiosk, onKiosk = { on -> kiosk = on; store.kiosk = on; if (on) { tab = 1; monitorFull = true } },
                                     onLogout = {
                                         com.metalsyntax.yihomelocal.data.AlertNotifier.schedule(this@MainActivity, false)
                                         store.session = null; store.cameras = emptyList()

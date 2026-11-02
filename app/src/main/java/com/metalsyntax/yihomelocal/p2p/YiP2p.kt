@@ -181,6 +181,33 @@ object YiP2p {
     /** Reinicia la cámara (se desconecta ~1 min). */
     suspend fun reboot(c: AntsCamera): Int? = cmd(c) { rebootDevice(it) }
 
+    /**
+     * Cómo quedó la conexión. El SDK TNP siempre activa la búsqueda en la red local (bit 0x01 del modo de PPPP_Connect)
+     * y solo cae a relay si no encuentra la cámara; forceRelay va en false. "P2P" con el teléfono en el mismo Wi-Fi
+     * que la cámara = directo por la red local; "Relay" = por los servidores de Yi.
+     */
+    enum class Link(val label: String) { WIFI_LOCAL("WI-FI LOCAL"), P2P("P2P INTERNET"), RELAY("RELAY"), UNKNOWN("") }
+
+    fun link(ctx: android.content.Context, c: AntsCamera, cam: CameraDevice): Link {
+        val type = (c as? com.tnp.TnpCamera)?.previousConnectType ?: return Link.UNKNOWN
+        return when {
+            type == "Relay" -> Link.RELAY
+            type == "P2P" && sameWifi(ctx, cam.localIp) -> Link.WIFI_LOCAL
+            type == "P2P" -> Link.P2P
+            else -> Link.UNKNOWN
+        }
+    }
+
+    /** El teléfono está en Wi-Fi y en la misma subred /24 que [ip] (IP local de la cámara según la nube). */
+    fun sameWifi(ctx: android.content.Context, ip: String): Boolean {
+        if (ip.isBlank()) return false
+        val cm = ctx.getSystemService(android.net.ConnectivityManager::class.java) ?: return false
+        val net = cm.activeNetwork ?: return false
+        if (cm.getNetworkCapabilities(net)?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) != true) return false
+        val mine = cm.getLinkProperties(net)?.linkAddresses?.mapNotNull { it.address as? java.net.Inet4Address }?.firstOrNull() ?: return false
+        return mine.hostAddress?.substringBeforeLast('.') == ip.substringBeforeLast('.')
+    }
+
     /** Formatea la microSD (borra TODAS las grabaciones). Devuelve el estado nuevo o null si no respondió. */
     suspend fun formatSd(c: AntsCamera) = cmd(c) { formatTfCard(it) }
 

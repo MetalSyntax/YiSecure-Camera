@@ -1,7 +1,7 @@
 <h1 align="center">YiSecure · Unofficial app for Yi Home cameras</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-v0.1-c62828" alt="v0.1">
+  <img src="https://img.shields.io/badge/status-v1.0-c62828" alt="v1.0">
   <img src="https://img.shields.io/badge/Android-7.0%2B-3ddc84?logo=android&logoColor=white" alt="Android 7.0+">
   <img src="https://img.shields.io/badge/Kotlin-Compose-7f52ff?logo=kotlin&logoColor=white" alt="Kotlin + Compose">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
@@ -17,14 +17,17 @@ The cameras speak Yi's own P2P protocol (TUTK / TNP), so the app talks to them t
 
 ## ✨ Status
 
-**Current version: v0.1** — tested on the developer's own camera (Yi Home 2K Pro / `y623`).
+**Current version: v1.0** — built and tested on the developer's own cameras (Yi Home 2K Pro / `y623`). See [PLAN_FASES.md](PLAN_FASES.md) for what is confirmed on hardware and what is still experimental.
 
-- [x] **Sign in** with your Yi account (email + password) and **create a password** for accounts made with Google.
-- [x] **Camera list** with online state; **rename**, **remove** and **add** cameras (pairing QR the camera reads).
-- [x] **Live view** (H.264 / H.265, hardware decoding), full screen, **snapshot** and **MP4 recording** (video only).
-- [x] **Events**: cloud alerts with pictures and clips (motion, person, sound, vehicle, pet…).
-- [ ] *Untested yet:* push-to-talk, per-camera settings (power, privacy, LED, night vision, sensitivity, microSD).
-- [ ] HD/2K stream (only the 640×360 substream arrives), audio, direct LAN connection, microSD playback.
+- [x] **Sign in** with your Yi account and **create a password** for accounts made with Google.
+- [x] **Cameras**: home / away / night **profiles**, **panic** button, big main camera + grid with status tags, online state, add / rename / remove.
+- [x] **Live view** with audio, push-to-talk, hands-free call, snapshot, MP4 recording, pinch zoom, **eye toggle** to hide every overlay, **auto-reconnect** and a **Wi-Fi local / P2P / relay** connection tag (the SDK always tries the local Wi-Fi first).
+- [x] **On-phone AI** (TensorFlow Lite): people, vehicles, pets (cats, dogs, birds), motion, shadows; approach / leave, loitering; **watch zone** drawn over the picture.
+- [x] **microSD NVR**: continuous recording as a thin track, events as tall bars, ±30 s / ±5 min / next event, pause, **download MP4**, usage bar, format.
+- [x] **Events**: cloud alerts and AI detections by day, new / read, favourites, share, save to gallery, "view on microSD", pet summary.
+- [x] **Notifications** of new cloud alerts (every 15 min), global silent mode, app lock with fingerprint, **home-screen widget**, wall-tablet **monitor mode**, ZIP **backup** of AI events.
+- [x] Per-camera settings with an **Advanced** section: detections, glass mode, firmware update, reboot, privacy, LED, night vision, sensitivity.
+- [ ] Not possible with Yi's SDK: playback speed (2x/4x/8x). Real PTZ is left out until a motorised camera is available. Siren pending a model that has one.
 
 ## Build instructions for developers
 

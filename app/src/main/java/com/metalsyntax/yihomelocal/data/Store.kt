@@ -83,6 +83,11 @@ class Store(ctx: Context) {
         get() = p.getBoolean("app_lock", false)
         set(v) = p.edit().putBoolean("app_lock", v).apply()
 
+    /** Monitor fijo (tablet en la pared): abre directo el monitor a pantalla completa y no apaga la pantalla. */
+    var kiosk: Boolean
+        get() = p.getBoolean("kiosk", false)
+        set(v) = p.edit().putBoolean("kiosk", v).apply()
+
     var ai: Boolean
         get() = p.getBoolean("ai", true)
         set(v) = p.edit().putBoolean("ai", v).apply()

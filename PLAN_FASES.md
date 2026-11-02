@@ -70,17 +70,18 @@ Reglas:
 | 6.4 | Sirena / luz de alerta: el SDK trae `setAlarmRing`, `playDeviceAlarmVoice` y `setAlertLightStatus`, pero sin saber qué modelos los soportan. Se deja hasta tener un modelo con sirena para probarlo. | SDK | pospuesto |
 | 6.5 | **Bloqueo de la app** con huella/rostro o PIN del teléfono (BiometricPrompt); vuelve a pedir tras 30 s en segundo plano. | App | hecho |
 
-## Fase 7 — Plataforma y calidad
+## Fase 7 — Plataforma y calidad (v1.0.0)
 
-| # | Tarea | Origen |
-|---|-------|--------|
-| 7.1 | Reconexión automática P2P con espera creciente cuando la cámara se cae. | App |
-| 7.2 | Conexión LAN directa (sin relay) → menos retraso y 2K. | SDK |
-| 7.3 | Widget de Android con la última captura por cámara. | App |
-| 7.4 | Fire 7 como monitor fijo (modo kiosco) — requiere las .so armeabi-v7a del APK universal de Kami. | App |
-| 7.5 | Respaldo de eventos de la IA a una carpeta / NAS. | App |
-| 7.6 | IA: dirección del movimiento ("se acerca/se aleja") y tiempo en escena. | App |
-| 7.7 | Commit + release en GitHub de cada fase (0.3.0 y 0.3.1 siguen sin commit). | — |
+| # | Tarea | Origen | Estado |
+|---|-------|--------|--------|
+| 7.1 | **Reconexión automática**: si no llegan cuadros en 15 s o hay error, reabre la conexión con espera 2, 4, 8… hasta 60 s ("Sin señal · reconectando en N s", "INTENTO N"). | App | hecho |
+| 7.2 | **Conexión LAN por Wi-Fi** (no cable): el SDK TNP ya busca la cámara en la red local primero (bit LAN en `PPPP_Connect`, `forceRelay=false`). La app muestra **WI-FI LOCAL** (P2P con el teléfono en la misma red Wi-Fi que la cámara), **P2P INTERNET** o **RELAY**. Si sale RELAY estando en casa, el router aísla clientes Wi-Fi o la cámara está en otra red/banda. | SDK | hecho (indicador) |
+| 7.3 | **Widget** de pantalla de inicio con la última imagen de la cámara principal; toque abre la app. | App | hecho |
+| 7.4 | **Monitor fijo** (tablet en la pared): abre el monitor a pantalla completa y no apaga la pantalla. En la Fire 7 sigue faltando el video: sin las .so armeabi-v7a del APK universal de Kami. | App | hecho (Fire pendiente de .so) |
+| 7.5 | **Respaldo** de eventos de la IA a ZIP (Drive, NAS o carpeta) desde Ajustes. | App | hecho |
+| 7.6 | IA: persona **se acerca / se aleja** (tamaño de la caja) y lado por el que salió + tiempo en escena. | App | hecho |
+| 7.7 | Commit + etiqueta **v1.0.0** (push y release en GitHub: el usuario con GitHub Desktop). | — | hecho (sin push) |
+| 2.1b | Avisos de la IA del teléfono con la app en segundo plano (necesita un servicio en primer plano con el video abierto). | App | pendiente post-1.0 |
 
 ## Fuera de alcance por ahora
 

@@ -41,6 +41,8 @@ fun SettingsScreen(
     onLogout: () -> Unit,
     silent: Boolean = false,
     onSilent: (Boolean) -> Unit = {},
+    kiosk: Boolean = false,
+    onKiosk: (Boolean) -> Unit = {},
 ) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val store = remember { com.metalsyntax.yihomelocal.data.Store(ctx) }
@@ -115,6 +117,28 @@ fun SettingsScreen(
                 Toggle("Bloquear la app", "Pide huella, rostro o el PIN del teléfono al abrir YiSecure", lock) { on ->
                     if (!on || com.metalsyntax.yihomelocal.AppLock.available(ctx)) { lock = on; store.appLock = on }
                     else testMsg = "Configura huella o bloqueo de pantalla en el teléfono primero"
+                }
+            }
+            SectionTitle("Monitor y respaldo", Icons.Default.Tv)
+            // exportar los eventos de la IA (fotos + índice) a un ZIP donde el usuario elija (Drive, NAS, carpeta)
+            var backupMsg by remember { mutableStateOf<String?>(null) }
+            val exporter = androidx.activity.compose.rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+                if (uri != null) scope.launch {
+                    backupMsg = runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.metalsyntax.yihomelocal.data.Backup.export(ctx, uri) } }
+                        .fold({ "Respaldo listo: $it fotos" }, { "No se pudo exportar: ${it.message}" })
+                }
+            }
+            Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Toggle("Monitor fijo", "Para una tablet en la pared: abre el monitor a pantalla completa y no apaga la pantalla", kiosk, onKiosk)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Respaldar eventos de la IA", color = PureWhite, fontSize = 14.sp)
+                        Text(backupMsg ?: "Fotos y datos en un ZIP (Drive, NAS o una carpeta)", color = MutedText, fontSize = 12.sp)
+                    }
+                    TextButton(onClick = {
+                        exporter.launch("YiSecure-eventos-" + java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US).format(java.util.Date()) + ".zip")
+                    }) { Mono("EXPORTAR", CrimsonRed, 11.sp) }
                 }
             }
             SectionTitle("Apariencia", Icons.Default.Palette)

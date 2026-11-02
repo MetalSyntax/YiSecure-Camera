@@ -14,6 +14,7 @@ object Snapshots {
         val tmp = File(f.path + ".tmp")
         tmp.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
         tmp.renameTo(f) // atómico: la lista nunca lee un JPEG a medio escribir
+        runCatching { com.metalsyntax.yihomelocal.CameraWidget.refresh(ctx) }
     }
 
     /** (imagen, epoch ms) o null si nunca se vio. */
