@@ -99,7 +99,7 @@ xor=$(strings -n 70 "$WORK"/dex/classes*.dex | grep -E '^.?[A-Za-z0-9]{70}$' | g
 echo "YI_PAIR_XOR=$xor" >> "$ROOT/yi.properties"
 
 # ---------- 7. imágenes del catálogo de modelos (assets/catalog.json → assets/models/*.png) ----------
-MODELS="$ROOT/app/src/main/assets/models"
+MODELS="$ROOT/app/src/debug/assets/models"  # solo debug: no van en el APK redistribuible
 mkdir -p "$MODELS"
 for img in $(grep -oE '"image": "[^"]+"' "$ROOT/app/src/main/assets/catalog.json" | cut -d'"' -f4); do
   for a in "$WORK/dpi.apk" "$WORK/base.apk"; do

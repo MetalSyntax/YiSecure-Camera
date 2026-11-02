@@ -32,6 +32,9 @@ android {
         release {
             // el jar del SDK viene de dex2jar con clases faltantes a propósito: R8 no lo tocaría bien
             isMinifyEnabled = false
+            // release redistribuible: sin claves de Yi (se leen en ejecución de Kami Home, ver YiSdk.kt)
+            buildConfigField("String", "YI_LOGIN_KEY", "\"\"")
+            buildConfigField("String", "YI_PAIR_XOR", "\"\"")
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -57,6 +60,12 @@ android {
     // el modelo de IA se mapea en memoria: no comprimirlo dentro del APK
     androidResources { noCompress += "tflite" }
 
+    // lo de Yi/Kami (.so e imágenes de modelos) solo va en debug; release lo toma de Kami Home instalada
+    sourceSets {
+        getByName("main").jniLibs.setSrcDirs(emptyList<String>())
+        getByName("debug").jniLibs.srcDir("src/main/jniLibs")
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -68,8 +77,9 @@ android {
 }
 
 dependencies {
-    // SDK P2P de Yi Home (tools/extract_sdk.sh)
-    implementation(files("libs/yisdk.jar"))
+    // SDK P2P de Yi Home (tools/extract_sdk.sh): debug lo incluye; release solo compila contra él y lo carga de Kami Home
+    debugImplementation(files("libs/yisdk.jar"))
+    releaseCompileOnly(files("libs/yisdk.jar"))
     // QR de emparejamiento que lee la cámara
     implementation("com.google.zxing:core:3.5.3")
     // detección de personas/vehículos/paquetes en el teléfono (EfficientDet-Lite0 en assets)

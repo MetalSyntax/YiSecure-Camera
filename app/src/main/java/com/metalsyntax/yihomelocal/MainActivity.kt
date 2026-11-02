@@ -58,6 +58,31 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 }
             }
             YiSecureTheme {
+                // release sin el SDK de Yi dentro: hace falta Kami Home (o Yi Home) instalada en el teléfono
+                var sdk by remember { mutableStateOf(App.sdkReady) }
+                if (!sdk) {
+                    Surface(Modifier.fillMaxSize(), color = PitchBlack) {
+                        Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Videocam, null, tint = CrimsonRed, modifier = Modifier.size(56.dp))
+                            Spacer(Modifier.height(16.dp))
+                            Text("Falta Kami Home", color = PureWhite, fontSize = 20.sp)
+                            Spacer(Modifier.height(8.dp))
+                            Text("YiSecure usa el motor de video de la app oficial Kami Home (o Yi Home). Instálala desde Play Store; no hace falta abrirla ni iniciar sesión en ella.",
+                                color = MutedText, fontSize = 14.sp)
+                            Spacer(Modifier.height(24.dp))
+                            com.metalsyntax.yihomelocal.ui.components.PrimaryButton("Abrir Play Store") {
+                                runCatching { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse("market://details?id=" + YiSdk.PACKAGES.first()))) }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            com.metalsyntax.yihomelocal.ui.components.SecondaryButton("Ya la instalé") {
+                                // el SDK se engancha al ClassLoader al arrancar: reiniciar el proceso
+                                if (YiSdk.load(this@MainActivity)) { sdk = true; recreate() }
+                            }
+                        }
+                    }
+                    return@YiSecureTheme
+                }
                 val scope = rememberCoroutineScope()
                 // bloqueo con huella: se pide al abrir y al volver tras >30 s en segundo plano
                 var unlockedApp by remember { mutableStateOf(!store.appLock) }

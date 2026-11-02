@@ -13,7 +13,14 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- allowBackup=false: las preferencias guardan el token de la cuenta Yi y las contraseñas P2P -->
+    <!-- Android 11+: ver Kami Home / Yi Home para cargar su SDK en el APK de release -->
+    <queries>
+        <package android:name="com.yitechnology.kamihome" />
+        <package android:name="com.ants360.yicamera.international" />
+    </queries>
+
     <application
+        android:name=".App"
         android:allowBackup="false"
         android:networkSecurityConfig="@xml/network_security_config"
         android:icon="@mipmap/ic_launcher"

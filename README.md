@@ -29,6 +29,12 @@ The cameras speak Yi's own P2P protocol (TUTK / TNP), so the app talks to them t
 - [x] Per-camera settings with an **Advanced** section: detections, glass mode, firmware update, reboot, privacy, LED, night vision, sensitivity.
 - [ ] Not possible with Yi's SDK: playback speed (2x/4x/8x). Real PTZ is left out until a motorised camera is available. Siren pending a model that has one.
 
+## Install
+
+Download `YiSecure-1.0.0.apk` from [Releases](https://github.com/MetalSyntax/YiSecure-Camera/releases) and install it on an **arm64** Android phone (Android 7.0+).
+
+The APK contains **no Yi code, native libraries or keys**. On first launch it borrows them from the official **Kami Home** (or Yi Home) app installed on the same phone: you only need to install Kami Home from Play Store; you don't have to open it or sign in there. Without it, YiSecure shows a screen with a Play Store link.
+
 ## Build instructions for developers
 
 Requirements: Android SDK, JDK 17+, `adb`, `d2j-dex2jar` (`brew install dex2jar`) and an **arm64** phone with **Yi Home** (`com.ants360.yicamera.international`, tested with 6.9.9) installed.

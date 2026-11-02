@@ -30,7 +30,7 @@ object YiP2p {
         if (ready) return
         // en Yi Home las carga código fuera del SDK; IOTCAPIs antes que AVAPIs (dependencia)
         try {
-            listOf("PPPP_API", "IOTCAPIs", "sCHL", "AVAPIs").forEach(System::loadLibrary)
+            listOf("c++_shared", "PPPP_API", "IOTCAPIs", "sCHL", "AVAPIs").forEach { runCatching { com.metalsyntax.yihomelocal.YiSdk.loadLib(it) }.onFailure { e -> if (it != "c++_shared") throw e } }
         } catch (e: UnsatisfiedLinkError) {
             // p. ej. tablet de 32 bits con un APK que solo trae las .so de Yi en arm64
             throw IllegalStateException("Este equipo (${android.os.Build.SUPPORTED_ABIS.joinToString()}) no tiene las librerías P2P de Yi", e)
@@ -212,7 +212,7 @@ object YiP2p {
     suspend fun formatSd(c: AntsCamera) = cmd(c) { formatTfCard(it) }
 
     /** Hablar: modo 0 = AAC sin cancelación de eco (no usa MobileAEC). Necesita libVoAACEncoder.so. */
-    fun startTalk(c: AntsCamera) { System.loadLibrary("VoAACEncoder"); c.startSpeaking(0) }
+    fun startTalk(c: AntsCamera) { com.metalsyntax.yihomelocal.YiSdk.loadLib("VoAACEncoder"); c.startSpeaking(0) }
 
     fun stopTalk(c: AntsCamera) = c.stopSpeaking()
 
@@ -221,7 +221,7 @@ object YiP2p {
      * (libwebrtc_apm) y se escucha la cámara a la vez.
      */
     fun startIntercom(c: AntsCamera) {
-        listOf("c++_shared", "webrtc_audio_preprocessing", "webrtc_apm", "VoAACEncoder").forEach(System::loadLibrary)
+        listOf("c++_shared", "webrtc_audio_preprocessing", "webrtc_apm", "VoAACEncoder").forEach(com.metalsyntax.yihomelocal.YiSdk::loadLib)
         setAudio(c, true)
         c.startSpeaking(1)
     }

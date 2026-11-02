@@ -17,6 +17,7 @@ build/
 /dist/
 *.apk
 /app/src/main/assets/models/
+/app/src/debug/assets/models/
 
 # AppleDouble que macOS crea en el disco exFAT
 ._*

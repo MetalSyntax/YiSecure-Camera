@@ -1059,8 +1059,8 @@ private fun SdTimeline(
                     tint = if (continuous) CrimsonRed else MutedText, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(if (continuous) "Grabando continuo 24 h" else "Grabando solo con movimiento", color = PureWhite, fontSize = 13.sp)
-                    Mono(if (continuous) "Toda la grabación + eventos marcados" else "La microSD solo guarda los eventos", MutedText, 10.sp)
+                    Text(if (continuous) "Continuo 24 h" else "Solo con movimiento", color = PureWhite, fontSize = 13.sp)
+                    Text(if (continuous) "Toda la grabación + eventos marcados" else "La microSD solo guarda eventos", color = MutedText, fontSize = 11.sp)
                 }
                 if (switching) CircularProgressIndicator(color = CrimsonRed, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
                 else TextButton(onClick = {
@@ -1176,9 +1176,8 @@ private fun SdTimeline(
             Spacer(Modifier.width(10.dp))
             Box(Modifier.size(12.dp, 4.dp).background(MutedText.copy(alpha = 0.8f))); Spacer(Modifier.width(4.dp))
             Mono("Continuo ${recordedMin / 60}h${"%02d".format(recordedMin % 60)}", MutedText, 10.sp)
-            Spacer(Modifier.weight(1f))
-            storage?.let { Mono(it, MutedText, 10.sp) }
         }
+        storage?.let { Mono(it, MutedText, 10.sp) }
         if (sdAt != null) {
             val pos = playing ?: sdAt
             val evs = (sdAlerts.map { it.start } + marks).sorted()

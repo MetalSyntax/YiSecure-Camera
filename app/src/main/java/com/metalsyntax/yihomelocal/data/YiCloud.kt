@@ -25,7 +25,7 @@ class YiCloud(private val region: String) {
         val data = get("/v4/users/login", linkedMapOf(
             "seq" to "1",
             "account" to account,
-            "password" to hmacB64("HmacSHA256", BuildConfig.YI_LOGIN_KEY, password),
+            "password" to hmacB64("HmacSHA256", com.metalsyntax.yihomelocal.YiSdk.loginKey, password),
             "dev_name" to Build.BRAND,
             "dev_type" to Build.MODEL,
             "dev_os_version" to "Android ${Build.VERSION.RELEASE}",
@@ -48,7 +48,7 @@ class YiCloud(private val region: String) {
     fun resetPassword(account: String, password: String, emailCode: String) {
         request("/v4/users/reset_pwd", linkedMapOf(
             "seq" to "1", "account" to account,
-            "password" to hmacB64("HmacSHA256", BuildConfig.YI_LOGIN_KEY, password), "email_code" to emailCode), "PUT")
+            "password" to hmacB64("HmacSHA256", com.metalsyntax.yihomelocal.YiSdk.loginKey, password), "email_code" to emailCode), "PUT")
     }
 
     fun devices(s: Session): List<CameraDevice> {
@@ -203,7 +203,7 @@ class YiCloud(private val region: String) {
         // modelos cuya rama de firmware no es familymonitor-<modelo> (assets/feature_config de Kami Home 4.9.9)
         private val FIRMWARE_BRANCH = mapOf("y30ga" to "y30qa", "y501c" to "y501gc", "y502c" to "y502gc")
 
-        private val PAIR_XOR = com.metalsyntax.yihomelocal.BuildConfig.YI_PAIR_XOR
+        private val PAIR_XOR get() = com.metalsyntax.yihomelocal.YiSdk.pairXor
 
         /** password del device list: hex de AES-ECB con clave = primeros 16 chars del UID. Vacío → "888888" (fábrica). */
         fun decryptPassword(uid: String, hex: String): String {
