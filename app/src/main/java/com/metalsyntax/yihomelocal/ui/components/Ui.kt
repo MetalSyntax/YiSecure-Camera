@@ -24,6 +24,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -170,5 +172,40 @@ fun kindIcon(kind: String): androidx.compose.ui.graphics.vector.ImageVector = wi
         "movimiento" in k -> Sensors
         "ia" in k -> Psychology
         else -> NotificationsActive
+    }
+}
+
+/**
+ * Sección "Avanzado" plegable: lo que se usa poco queda fuera de la vista hasta que se pide (divulgación progresiva).
+ * Cerrada por defecto; recuerda su estado al girar la pantalla.
+ */
+@Composable
+fun Advanced(hint: String, content: @Composable ColumnScope.() -> Unit) {
+    var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val turn by androidx.compose.animation.core.animateFloatAsState(if (open) 180f else 0f, label = "chevron")
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(CardBackground)
+                .clickable(onClickLabel = if (open) "Ocultar opciones avanzadas" else "Mostrar opciones avanzadas") { open = !open }
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Default.Settings, null, tint = MutedText, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Avanzado", color = PureWhite, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(hint, color = MutedText, fontSize = 12.sp, maxLines = 2)
+            }
+            Icon(Icons.Default.ExpandMore, null, tint = MutedText, modifier = Modifier.graphicsLayer { rotationZ = turn })
+        }
+        androidx.compose.animation.AnimatedVisibility(
+            open,
+            enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(220, easing = androidx.compose.animation.core.FastOutSlowInEasing)) +
+                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)),
+            exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(180)) +
+                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+        }
     }
 }

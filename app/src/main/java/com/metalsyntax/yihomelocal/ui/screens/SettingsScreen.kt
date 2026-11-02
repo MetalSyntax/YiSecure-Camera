@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -52,7 +53,20 @@ fun SettingsScreen(
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         AppHeader("Ajustes", "Cuenta Yi · región ${region.uppercase()}")
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SectionTitle("Gestión de dispositivos", Icons.Default.Videocam) { Mono("${cameras.size} CÁMARAS", MutedText, 10.sp) }
+            // firmware nuevo según la última versión leída de cada cámara (sin abrir P2P)
+            var updates by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+            LaunchedEffect(cameras) {
+                updates = cameras.mapNotNull { c ->
+                    val cur = store.firmware(c.uid) ?: return@mapNotNull null
+                    runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.metalsyntax.yihomelocal.data.YiCloud(region).firmware(c.uid, c.model, cur) } }
+                        .getOrNull()?.takeIf { it.needUpdate }?.let { c.uid to it.version }
+                }.toMap()
+            }
+            SectionTitle("Gestión de dispositivos", Icons.Default.Videocam) {
+                if (updates.isNotEmpty()) Mono("${updates.size} ${if (updates.size == 1) "ACTUALIZACIÓN" else "ACTUALIZACIONES"}", OnAccent, 10.sp,
+                    Modifier.clip(RoundedCornerShape(50)).background(CrimsonRed).padding(horizontal = 8.dp, vertical = 3.dp))
+                else Mono("${cameras.size} CÁMARAS", MutedText, 10.sp)
+            }
             Column(Modifier.fillMaxWidth().panel()) {
                 cameras.forEach { cam ->
                     val on = if (cam.uid in online) online[cam.uid] ?: cam.online else null
@@ -63,7 +77,9 @@ fun SettingsScreen(
                         Column(Modifier.weight(1f)) {
                             Text(cam.name, color = PureWhite, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                             Mono("${cam.model} · ${when (on) { true -> "En línea"; false -> "Desconectada"; null -> "Verificando…" }}", if (on == false) CrimsonRed else MutedText, 10.sp)
+                            updates[cam.uid]?.let { v -> Mono("Firmware $v disponible", CrimsonRed, 10.sp) }
                         }
+                        if (cam.uid in updates) TextButton(onClick = { onEditCamera(cam) }) { Mono("INSTALAR", CrimsonRed, 11.sp) }
                         IconButton(onClick = { onEditCamera(cam) }) { Icon(Icons.Default.Tune, "Editar", tint = MutedText) }
                     }
                     HorizontalDivider(color = BorderSubtle)
@@ -91,6 +107,14 @@ fun SettingsScreen(
                                 .fold({ if (it == 0) "Sin alertas nuevas" else "$it alertas nuevas avisadas" }, { "Error: ${it.message}" })
                         }
                     }) { Mono("REVISAR", CrimsonRed, 11.sp) }
+                }
+            }
+            SectionTitle("Seguridad", Icons.Default.Fingerprint)
+            var lock by remember { mutableStateOf(store.appLock) }
+            Column(Modifier.fillMaxWidth().panel().padding(14.dp)) {
+                Toggle("Bloquear la app", "Pide huella, rostro o el PIN del teléfono al abrir YiSecure", lock) { on ->
+                    if (!on || com.metalsyntax.yihomelocal.AppLock.available(ctx)) { lock = on; store.appLock = on }
+                    else testMsg = "Configura huella o bloqueo de pantalla en el teléfono primero"
                 }
             }
             SectionTitle("Apariencia", Icons.Default.Palette)
@@ -154,47 +178,48 @@ fun EditCameraScreen(
                 PrimaryButton("Guardar nombre", enabled = !busy && name.isNotBlank() && name.trim() != camera.name) { onRename(name.trim()) }
             }
 
-            SectionTitle("Ubicación", Icons.Default.Home)
             val ctx = androidx.compose.ui.platform.LocalContext.current
             val st = remember { com.metalsyntax.yihomelocal.data.Store(ctx) }
             var interior by remember(camera.uid) { mutableStateOf(st.isInterior(camera.uid)) }
-            Column(Modifier.fillMaxWidth().panel().padding(14.dp)) {
-                Toggle("Cámara de interior", "Con el perfil \"En casa\" se pone en privacidad y sin alertas", interior) {
-                    interior = it; st.setInterior(camera.uid, it)
+            // privacidad y acceso: interior (perfil "En casa") + PIN, juntos
+            val access: @Composable () -> Unit = {
+                SectionTitle("Privacidad y acceso", Icons.Default.Lock) { Mono(if (hasPin) "PIN ACTIVO" else "SIN PIN", if (hasPin) CrimsonRed else MutedText, 10.sp) }
+                Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Toggle("Cámara de interior", "Con el perfil \"En casa\" se pone en privacidad y sin alertas", interior) {
+                        interior = it; st.setInterior(camera.uid, it)
+                    }
+                    Text(
+                        if (hasPin) "PIN: se pide al abrir o editar esta cámara."
+                        else "PIN opcional de 4 a 8 dígitos para abrir esta cámara.",
+                        color = MutedText, fontSize = 13.sp,
+                    )
+                    Field(pin, { v -> pin = v.filter(Char::isDigit).take(8); pinMsg = null }, if (hasPin) "Nuevo PIN" else "PIN (4–8 dígitos)", password = true)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (hasPin) SecondaryButton("Quitar PIN", Modifier.weight(1f), color = CrimsonRed) { onPin(null); pinMsg = "PIN quitado" }
+                        PrimaryButton(if (hasPin) "Cambiar PIN" else "Fijar PIN", enabled = pin.length >= 4, modifier = Modifier.weight(1f)) {
+                            onPin(pin); pin = ""; pinMsg = "PIN guardado"
+                        }
+                    }
+                    pinMsg?.let { Text(it, color = MutedText, fontSize = 12.sp) }
                 }
             }
-
-            if (cloud != null && account != null) CameraSettings(camera, cam, cloud, account)
-
-            SectionTitle("PIN", Icons.Default.Lock) { Mono(if (hasPin) "ACTIVO" else "SIN PIN", if (hasPin) CrimsonRed else MutedText, 10.sp) }
-            Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    if (hasPin) "Se pide al abrir o editar esta cámara; en el monitor se ve bloqueada hasta abrirla."
-                    else "Opcional: pide un PIN de 4 a 8 dígitos para abrir esta cámara.",
-                    color = MutedText, fontSize = 13.sp,
-                )
-                Field(pin, { v -> pin = v.filter(Char::isDigit).take(8); pinMsg = null }, if (hasPin) "Nuevo PIN" else "PIN (4–8 dígitos)", password = true)
-                PrimaryButton(if (hasPin) "Cambiar PIN" else "Fijar PIN", enabled = pin.length >= 4) {
-                    onPin(pin); pin = ""; pinMsg = "PIN guardado"
-                }
-                if (hasPin) SecondaryButton("Quitar PIN", color = CrimsonRed) { onPin(null); pinMsg = "PIN quitado" }
-                pinMsg?.let { Text(it, color = MutedText, fontSize = 12.sp) }
-            }
-
-            CameraDetails(camera)
-
-            SectionTitle("Eliminar", Icons.Default.DeleteOutline)
-            Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    "Se quita de tu cuenta Yi/Kami (también de la app oficial). Para volver a usarla hay que resetearla y emparejarla.",
-                    color = MutedText, fontSize = 13.sp,
-                )
-                if (!confirmDelete) SecondaryButton("Eliminar cámara", color = CrimsonRed) { confirmDelete = true }
-                else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SecondaryButton("Cancelar", Modifier.weight(1f)) { confirmDelete = false }
-                    PrimaryButton("Sí, eliminar", enabled = !busy, modifier = Modifier.weight(1f), onClick = onDelete)
+            val danger: @Composable () -> Unit = {
+                CameraDetails(camera)
+                SectionTitle("Eliminar", Icons.Default.DeleteOutline)
+                Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Se quita de tu cuenta Yi/Kami (también de la app oficial). Para volver a usarla hay que resetearla y emparejarla.",
+                        color = MutedText, fontSize = 13.sp,
+                    )
+                    if (!confirmDelete) SecondaryButton("Eliminar cámara", color = CrimsonRed) { confirmDelete = true }
+                    else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SecondaryButton("Cancelar", Modifier.weight(1f)) { confirmDelete = false }
+                        PrimaryButton("Sí, eliminar", enabled = !busy, modifier = Modifier.weight(1f), onClick = onDelete)
+                    }
                 }
             }
+            if (cloud != null && account != null) CameraSettings(camera, cam, cloud, account, middle = access, extra = danger)
+            else { access(); Advanced("Detalles y eliminar") { danger() } }
             if (busy) CircularProgressIndicator(color = CrimsonRed, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
             Spacer(Modifier.height(16.dp))
         }

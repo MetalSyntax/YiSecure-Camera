@@ -168,6 +168,19 @@ object YiP2p {
 
     fun resumeSd(c: AntsCamera) = c.resumePlay()
 
+    /** Zona de detección de movimiento que guarda la cámara (IOCTRL 4903/4901): open, resolution y el rectángulo. */
+    suspend fun motionZone(c: AntsCamera) = cmd<com.tutk.IOTC.AVIOCTRLDEFs.SMsAVIoctrlMotionDetectCfg>(c) { getMotionDetect(it) }
+
+    /**
+     * Cambia la zona de movimiento de la cámara. ponytail: la escala de las coordenadas depende de [resolution] y no
+     * está documentada; quien llama reusa la resolution que leyó y escala al tamaño que esa lectura sugiere.
+     */
+    suspend fun setMotionZone(c: AntsCamera, open: Boolean, resolution: Int, l: Int, t: Int, r: Int, b: Int) =
+        cmd<com.tutk.IOTC.AVIOCTRLDEFs.SMsAVIoctrlMotionDetectCfg>(c) { setMotionDetect(if (open) 1 else 0, resolution, l, t, r, b, it) }
+
+    /** Reinicia la cámara (se desconecta ~1 min). */
+    suspend fun reboot(c: AntsCamera): Int? = cmd(c) { rebootDevice(it) }
+
     /** Formatea la microSD (borra TODAS las grabaciones). Devuelve el estado nuevo o null si no respondió. */
     suspend fun formatSd(c: AntsCamera) = cmd(c) { formatTfCard(it) }
 

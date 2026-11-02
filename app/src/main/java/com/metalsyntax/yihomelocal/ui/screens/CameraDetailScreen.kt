@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -117,7 +118,8 @@ fun CameraDetailScreen(
     var picker by remember { mutableStateOf(false) }
     // IA del teléfono: cajas del último análisis, día/noche y eventos guardados
     var aiOn by remember { mutableStateOf(store.ai) }
-    var hud by remember { mutableStateOf(store.hud) } // ojo: mostrar/ocultar todo lo que va sobre el video
+    var hud by remember { mutableStateOf(store.hud) }
+    val zone = remember(camera.uid) { store.zone(camera.uid) } // ojo: mostrar/ocultar todo lo que va sobre el video
     var dets by remember { mutableStateOf<List<Det>>(emptyList()) }
     var scene by remember { mutableStateOf<Scene?>(null) }
     var events by remember { mutableStateOf(LocalEvents.list(ctx, camera.uid)) }
@@ -156,8 +158,13 @@ fun CameraDetailScreen(
             val now = System.currentTimeMillis()
             val replay = sdAt != null
             val (sc, d, found) = withContext(Dispatchers.Default) {
-                val sc = analyzer.analyze(bmp)
-                val d = if (aiOn) runCatching { Detector.detect(ctx, bmp) }.getOrDefault(emptyList()) else emptyList()
+                // movimiento fuera de la zona de vigilancia = sin movimiento
+                val sc = analyzer.analyze(bmp).let { raw ->
+                    if (zone != null && raw.motion?.let { android.graphics.RectF.intersects(it, zone) } == false) raw.copy(motion = null) else raw
+                }
+                // con zona de vigilancia, solo cuenta lo que tiene el centro dentro de la zona
+                val d = (if (aiOn) runCatching { Detector.detect(ctx, bmp) }.getOrDefault(emptyList()) else emptyList())
+                    .filter { zone == null || zone.contains(it.box.centerX(), it.box.centerY()) }
                 // en la reproducción de la microSD no se guardan eventos: la hora no sería la real
                 Triple(sc, d, if (aiOn && !replay) sentinel.update(now, d, sc) else emptyList())
             }
@@ -304,6 +311,7 @@ fun CameraDetailScreen(
                 zoomLayer, tools, onFrameTime = { frameSec = it; frameCount.incrementAndGet() },
             )
             // cajas de la IA encima del video, con el mismo zoom
+            if (hud) zone?.let { ZoneOverlay(it, zoomLayer) }
             if (hud) DetectionOverlay(dets, zoomLayer)
             // capa de gestos encima del video: pellizco/arrastre solo con 2 dedos o ya con zoom, para no bloquear el scroll
             Box(Modifier.matchParentSize().pointerInput(Unit) {
@@ -335,7 +343,6 @@ fun CameraDetailScreen(
                     }
                     if (live && fps > 0) VideoChip(listOfNotNull("$fps FPS", resolution).joinToString(" • "))
                     if (zoom > 1.05f) VideoChip("%.1fx".format(zoom))
-                    if (audio) VideoChip("AUDIO ON")
                 }
                 Column(Modifier.align(Alignment.TopEnd).padding(10.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     VideoChip("$clock ${utcOffset()}")
@@ -369,9 +376,6 @@ fun CameraDetailScreen(
                 }
                 Row(Modifier.align(Alignment.BottomEnd).padding(end = 52.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     VideoButton(Icons.Default.PhotoCamera, "Tomar foto", enabled = live) { capture() }
-                    VideoButton(if (zoom >= 4f) Icons.Default.ZoomOut else Icons.Default.ZoomIn, "Zoom") {
-                        setZoom(when { zoom < 1.5f -> 2f; zoom < 3.5f -> 4f; else -> 1f })
-                    }
                     VideoButton(if (full) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
                         if (full) "Salir de pantalla completa" else "Pantalla completa") { full = !full }
                 }
@@ -409,6 +413,28 @@ fun CameraDetailScreen(
                     } else message = "Ya hay una grabación en curso"
                 })
 
+            // acciones principales (Hablar y Captura ya están sobre el video)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Control(if (recording) Icons.Default.Stop else Icons.Default.FiberManualRecord, "Grabar",
+                    if (recording) "Detener" else "MP4", recording, Modifier.weight(1f).clickable(enabled = live || recording) { toggleRecording() })
+                Control(if (audio) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                    "Audio", if (audio) "Activado" else "Silencio", audio, Modifier.weight(1f).clickable {
+                        audio = !audio; store.audio = audio; cam?.let { YiP2p.setAudio(it, audio || recording) }
+                    })
+                Control(if (calling) Icons.Default.CallEnd else Icons.Default.Call, "Llamada",
+                    if (calling) "Colgar" else "Manos libres", calling,
+                    Modifier.weight(1f).clickable(enabled = cam != null) {
+                        val c = cam ?: return@clickable
+                        if (calling) {
+                            runCatching { YiP2p.stopTalk(c) }; YiP2p.setAudio(c, audio); calling = false
+                        } else if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                        } else {
+                            calling = runCatching { YiP2p.startIntercom(c) }.onFailure { message = "No se pudo iniciar: ${it.message}" }.isSuccess
+                        }
+                    })
+            }
+
             info?.let { i ->
                 fun apply(cmd: suspend (AntsCamera) -> DeviceInfo?) { val c = cam ?: return; scope.launch { cmd(c)?.let { info = it } } }
                 val ledOn = i.close_light.toInt() != 1
@@ -426,49 +452,28 @@ fun CameraDetailScreen(
                 }
             }
 
-            // calidad: el cambio lo aplica la cámara; el decodificador se reconfigura solo al llegar el nuevo tamaño
-            Segmented(listOf(YiP2p.QUALITY_AUTO to "AUTO", YiP2p.QUALITY_SD to "SD", YiP2p.QUALITY_HIGH to "2K"), quality) { q ->
-                quality = q; store.quality = q; cam?.let { YiP2p.setQuality(it, q) }
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Control(Icons.Default.PhotoCamera, "Captura", "A galería", false, Modifier.weight(1f).clickable(enabled = live) { capture() })
-                Control(if (recording) Icons.Default.Stop else Icons.Default.FiberManualRecord, "Grabar",
-                    if (recording) "Detener" else "MP4", recording, Modifier.weight(1f).clickable(enabled = live || recording) { toggleRecording() })
-                Control(Icons.Default.Mic, "Hablar", if (talking) "Hablando…" else "Mantener", talking, Modifier.weight(1f).then(pushToTalk))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Control(if (audio) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
-                    "Audio", if (audio) "Activado" else "Silencio", audio, Modifier.weight(1f).clickable {
-                        audio = !audio; store.audio = audio; cam?.let { YiP2p.setAudio(it, audio || recording) }
-                    })
-                Control(Icons.Default.ScreenRotation, "Girar", if (flipped) "180°" else "Normal", flipped, Modifier.weight(1f).clickable {
-                    flipped = !flipped; store.setFlipped(camera.uid, flipped); cam?.let { YiP2p.setFlipped(it, flipped) }
-                })
-                Control(Icons.Default.Refresh, "Reconectar", "P2P", false, Modifier.weight(1f).clickable {
-                    status = "Reconectando…"; sdAt = null; session++
-                })
-            }
-            // intercomunicador manos libres: hablar y escuchar a la vez con cancelación de eco, hasta colgar
-            Control(if (calling) Icons.Default.CallEnd else Icons.Default.Call, "Intercomunicador",
-                if (calling) "En llamada · toca para colgar" else "Manos libres (habla y escucha)", calling,
-                Modifier.fillMaxWidth().clickable(enabled = cam != null) {
-                    val c = cam ?: return@clickable
-                    if (calling) {
-                        runCatching { YiP2p.stopTalk(c) }; YiP2p.setAudio(c, audio); calling = false
-                    } else if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                        micPermission.launch(Manifest.permission.RECORD_AUDIO)
-                    } else {
-                        calling = runCatching { YiP2p.startIntercom(c) }.onFailure { message = "No se pudo iniciar: ${it.message}" }.isSuccess
-                    }
-                })
-
             RecentEvents(events, alerts, aiOn,
                 onOpenEvent = { openEvent = it }, onOpenAlert = { openAlert = it },
                 onSave = { bmp -> scope.launch {
                     message = runCatching { withContext(Dispatchers.IO) { "Guardada en " + Gallery.saveImage(ctx, camera.name, bmp) } }
                         .getOrElse { "No se pudo guardar: ${it.message}" }
                 } })
+
+            Advanced("Calidad del video, girar imagen y reconectar") {
+                // calidad: el cambio lo aplica la cámara; el decodificador se reconfigura solo al llegar el nuevo tamaño
+                Text("Calidad", color = PureWhite, fontSize = 14.sp)
+                Segmented(listOf(YiP2p.QUALITY_AUTO to "AUTO", YiP2p.QUALITY_SD to "SD", YiP2p.QUALITY_HIGH to "2K"), quality) { q ->
+                    quality = q; store.quality = q; cam?.let { YiP2p.setQuality(it, q) }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Control(Icons.Default.ScreenRotation, "Girar", if (flipped) "180°" else "Normal", flipped, Modifier.weight(1f).clickable {
+                        flipped = !flipped; store.setFlipped(camera.uid, flipped); cam?.let { YiP2p.setFlipped(it, flipped) }
+                    })
+                    Control(Icons.Default.Refresh, "Reconectar", "Si se congela", false, Modifier.weight(1f).clickable {
+                        status = "Reconectando…"; sdAt = null; session++
+                    })
+                }
+            }
         }
     }
 
@@ -672,8 +677,15 @@ fun LocalEventDialog(e0: LocalEvent, camName: String, onDismiss: () -> Unit, onS
  * Las alertas en la nube (pushflag) se leen/escriben en la API de Yi.
  */
 @Composable
-fun CameraSettings(camera: CameraDevice, cam: AntsCamera?, cloud: YiCloud, account: YiCloud.Session) {
+fun CameraSettings(
+    camera: CameraDevice, cam: AntsCamera?, cloud: YiCloud, account: YiCloud.Session,
+    /** Va entre los ajustes básicos y "Avanzado" (privacidad y acceso). */
+    middle: @Composable () -> Unit = {},
+    /** Más contenido dentro de "Avanzado" (detalles, eliminar…). */
+    extra: @Composable () -> Unit = {},
+) {
     val scope = rememberCoroutineScope()
+    val ctxS = LocalContext.current
     var info by remember { mutableStateOf<DeviceInfo?>(null) }
     var version by remember { mutableStateOf<String?>(null) }
     var push by remember { mutableStateOf<String?>(null) }
@@ -684,7 +696,7 @@ fun CameraSettings(camera: CameraDevice, cam: AntsCamera?, cloud: YiCloud, accou
         val c = cam ?: return@LaunchedEffect
         delay(1500) // dejar que el SDK termine de autenticar
         info = YiP2p.info(c) ?: YiP2p.info(c)
-        version = YiP2p.version(c)
+        version = YiP2p.version(c)?.also { com.metalsyntax.yihomelocal.data.Store(ctxS).setFirmware(camera.uid, it) }
         if (info == null) error = "La cámara no respondió a la lectura de ajustes"
     }
     LaunchedEffect(camera.uid) {
@@ -709,27 +721,20 @@ fun CameraSettings(camera: CameraDevice, cam: AntsCamera?, cloud: YiCloud, accou
     if (i == null) {
         Text(error ?: if (cam == null) "Conecta para leer los ajustes" else "Leyendo ajustes de la cámara…", color = MutedText, fontSize = 13.sp)
     } else {
-        Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Toggle("Cámara encendida", "Apagada = modo privacidad, no transmite", i.close_camera.toInt() == 0) { on ->
+        // lo de todos los días en un solo panel; lo demás en "Avanzado"
+        Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Toggle("Cámara encendida", "Apagada = privacidad: no transmite, no detecta ni avisa", i.close_camera.toInt() == 0) { on ->
                 apply { YiP2p.setCameraOn(it, on) }
             }
+            push?.let { flag ->
+                Toggle("Alertas", if (flag == "2") "Con horario (configurado en Yi Home)" else "Avisos e imágenes en Eventos", flag != "0") { on ->
+                    scope.launch {
+                        val ok = runCatching { withContext(Dispatchers.IO) { cloud.setAlertPush(account, camera.uid, on) } }.isSuccess
+                        if (ok) push = if (on) "1" else "0"
+                    }
+                }
+            }
             Toggle("Luz de estado", "LED del frente de la cámara", i.close_light.toInt() != 1) { on -> apply { YiP2p.setLed(it, on) } }
-            Toggle("Modo vidrio", "Detrás de una ventana: apaga IR y LED para que no se reflejen", i.close_light.toInt() == 1 && i.day_night_mode.toInt() == 2) { on ->
-                apply { YiP2p.setGlassMode(it, on) }
-            }
-        }
-        SectionTitle("Seguridad y detección", Icons.Default.CenterFocusStrong)
-        Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Toggle("Solo personas", "Alertas solo cuando hay personas (si no, cualquier movimiento)", i.personDetectionEnabled()) { on ->
-                apply { YiP2p.setPersonDetection(it, on) }
-            }
-            Toggle("Sonido anormal", "Ruidos fuertes, golpes, alarmas", i.v1_extend_abnormal_sound.toInt() == 2 || i.v2_extend_abnormal_sound.toInt() == 2) { on ->
-                apply { YiP2p.setSoundDetection(it, on) }
-            }
-            Toggle("Llanto de bebé", "Avisa si detecta llanto", i.baby_crying_mode.toInt() == 2) { on -> apply { YiP2p.setBabyCry(it, on) } }
-        }
-        SectionTitle("Imagen", Icons.Default.Image)
-        Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Visión nocturna", color = PureWhite, fontSize = 14.sp)
                 Segmented(listOf(1 to "AUTO", 3 to "ON", 2 to "OFF"), i.day_night_mode.toInt()) { m -> apply { YiP2p.setNightVision(it, m) } }
@@ -742,13 +747,21 @@ fun CameraSettings(camera: CameraDevice, cam: AntsCamera?, cloud: YiCloud, accou
         }
     }
 
-    push?.let { flag ->
-        Column(Modifier.fillMaxWidth().panel().padding(14.dp)) {
-            Toggle("Alertas en la nube", if (flag == "2") "Con horario (configurado en Yi Home)" else "Eventos e imágenes en la pestaña Eventos", flag != "0") { on ->
-                scope.launch {
-                    val ok = runCatching { withContext(Dispatchers.IO) { cloud.setAlertPush(account, camera.uid, on) } }.isSuccess
-                    if (ok) push = if (on) "1" else "0"
-                }
+    middle()
+
+    Advanced("Detecciones, modo vidrio, microSD, firmware, detalles y eliminar") {
+    if (i != null) {
+        SectionTitle("Detecciones", Icons.Default.CenterFocusStrong)
+        Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Toggle("Solo personas", "Alertas solo cuando hay personas (si no, cualquier movimiento)", i.personDetectionEnabled()) { on ->
+                apply { YiP2p.setPersonDetection(it, on) }
+            }
+            Toggle("Sonido anormal", "Ruidos fuertes, golpes, alarmas", i.v1_extend_abnormal_sound.toInt() == 2 || i.v2_extend_abnormal_sound.toInt() == 2) { on ->
+                apply { YiP2p.setSoundDetection(it, on) }
+            }
+            Toggle("Llanto de bebé", "Avisa si detecta llanto", i.baby_crying_mode.toInt() == 2) { on -> apply { YiP2p.setBabyCry(it, on) } }
+            Toggle("Modo vidrio", "Detrás de una ventana: apaga IR y LED para que no se reflejen", i.close_light.toInt() == 1 && i.day_night_mode.toInt() == 2) { on ->
+                apply { YiP2p.setGlassMode(it, on) }
             }
         }
     }
@@ -781,6 +794,113 @@ fun CameraSettings(camera: CameraDevice, cam: AntsCamera?, cloud: YiCloud, accou
                 confirmButton = { TextButton(onClick = { askFormat = false; apply { YiP2p.formatSd(it) } }) { Text("FORMATEAR", color = CrimsonRed) } },
                 dismissButton = { TextButton(onClick = { askFormat = false }) { Text("Cancelar", color = MutedText) } },
             )
+        }
+    }
+    ZoneEditor(camera, cam)
+
+    SectionTitle("Reiniciar", Icons.Default.RestartAlt)
+    Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        var askReboot by remember { mutableStateOf(false) }
+        var rebootMsg by remember { mutableStateOf<String?>(null) }
+        Text("Si la cámara se cuelga o no conecta. Tarda alrededor de 1 minuto en volver.", color = MutedText, fontSize = 13.sp)
+        SecondaryButton("Reiniciar cámara", icon = Icons.Default.RestartAlt, modifier = Modifier.fillMaxWidth()) { askReboot = true }
+        rebootMsg?.let { Text(it, color = MutedText, fontSize = 12.sp) }
+        if (askReboot) AlertDialog(
+            onDismissRequest = { askReboot = false }, containerColor = CardBackground,
+            title = { Text("¿Reiniciar ${camera.name}?", color = PureWhite) },
+            text = { Text("Se desconecta y deja de grabar durante el reinicio.", color = MutedText) },
+            confirmButton = { TextButton(onClick = {
+                askReboot = false
+                val c = cam
+                if (c == null) rebootMsg = "Conecta la cámara primero"
+                else scope.launch { rebootMsg = if (YiP2p.reboot(c) != null) "Reiniciando… vuelve en ~1 min" else "La cámara no confirmó (puede estar reiniciando igual)" }
+            }) { Text("REINICIAR", color = CrimsonRed) } },
+            dismissButton = { TextButton(onClick = { askReboot = false }) { Text("Cancelar", color = MutedText) } },
+        )
+    }
+
+    extra()
+    }
+}
+
+/**
+ * Zona de vigilancia: se dibuja arrastrando sobre la última imagen. Siempre filtra la IA del teléfono (fuera de la
+ * zona no hay eventos). Opcionalmente se manda a la cámara (getMotionDetect/setMotionDetect): la escala de
+ * coordenadas se deduce de la zona que ya tenía la cámara y se muestra lo que respondió, para confirmarla.
+ */
+@Composable
+private fun ZoneEditor(camera: CameraDevice, cam: AntsCamera?) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val store = remember { com.metalsyntax.yihomelocal.data.Store(ctx) }
+    val snap = remember(camera.uid) { com.metalsyntax.yihomelocal.data.Snapshots.load(ctx, camera.uid)?.first }
+    var zone by remember(camera.uid) { mutableStateOf(store.zone(camera.uid)) }
+    var start by remember { mutableStateOf<Offset?>(null) }
+    var toCamera by remember { mutableStateOf(false) }
+    var msg by remember { mutableStateOf<String?>(null) }
+
+    SectionTitle("Zona de vigilancia", Icons.Default.CropFree) { Mono(if (zone != null) "ACTIVA" else "TODO EL CUADRO", if (zone != null) CrimsonRed else MutedText, 10.sp) }
+    Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Arrastra sobre la imagen para marcar lo que importa (puerta, entrada). Lo de afuera no genera eventos de la IA.", color = MutedText, fontSize = 13.sp)
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(4.dp)).background(Color.Black)
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { o -> start = o },
+                    onDrag = { ch, _ ->
+                        val a = start ?: return@detectDragGestures
+                        val p = ch.position
+                        zone = android.graphics.RectF(
+                            (minOf(a.x, p.x) / size.width).coerceIn(0f, 1f), (minOf(a.y, p.y) / size.height).coerceIn(0f, 1f),
+                            (maxOf(a.x, p.x) / size.width).coerceIn(0f, 1f), (maxOf(a.y, p.y) / size.height).coerceIn(0f, 1f))
+                    },
+                    onDragEnd = { start = null },
+                )
+            }) {
+            snap?.let { androidx.compose.foundation.Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                ?: Text("Abre el vivo una vez para tener imagen de fondo", color = MutedText, fontSize = 12.sp, modifier = Modifier.align(Alignment.Center))
+            zone?.let { z -> ZoneOverlay(z, Modifier.fillMaxSize()) }
+        }
+        Toggle("Aplicar también en la cámara", "Experimental: la cámara solo avisaría por movimiento dentro de la zona", toCamera) { toCamera = it }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SecondaryButton("Quitar zona", Modifier.weight(1f)) {
+                zone = null; store.setZone(camera.uid, null); msg = "Zona quitada: se vigila todo el cuadro"
+                if (toCamera) cam?.let { c -> scope.launch { YiP2p.motionZone(c)?.let { cfg -> YiP2p.setMotionZone(c, false, cfg.resolution, cfg.top_left_x, cfg.top_left_y, cfg.bottom_right_x, cfg.bottom_right_y) } } }
+            }
+            PrimaryButton("Guardar zona", enabled = zone != null, modifier = Modifier.weight(1f)) {
+                val z = zone ?: return@PrimaryButton
+                store.setZone(camera.uid, z); msg = "Zona guardada para la IA del teléfono"
+                val c = cam
+                if (toCamera && c != null) scope.launch {
+                    val cfg = YiP2p.motionZone(c)
+                    if (cfg == null) { msg = "Guardada en el teléfono; la cámara no respondió a la zona"; return@launch }
+                    // escala deducida de la zona que ya tenía la cámara (sin documentación de Yi)
+                    val (w, h) = when { cfg.bottom_right_x in 1..100 && cfg.bottom_right_y in 1..100 -> 100 to 100
+                        cfg.bottom_right_x <= 640 -> 640 to 360; cfg.bottom_right_x <= 1280 -> 1280 to 720; else -> 1920 to 1080 }
+                    val r = YiP2p.setMotionZone(c, true, cfg.resolution, (z.left * w).toInt(), (z.top * h).toInt(), (z.right * w).toInt(), (z.bottom * h).toInt())
+                    msg = if (r != null) "Cámara: ${r.top_left_x},${r.top_left_y} → ${r.bottom_right_x},${r.bottom_right_y} (escala $w×$h, res ${r.resolution})"
+                        else "Guardada en el teléfono; la cámara no confirmó la zona"
+                }
+            }
+        }
+        msg?.let { Text(it, color = MutedText, fontSize = 12.sp) }
+    }
+}
+
+/** Rectángulo de la zona de vigilancia (blanco con esquinas rojas) sobre la imagen. */
+@Composable
+fun ZoneOverlay(z: android.graphics.RectF, modifier: Modifier) {
+    androidx.compose.foundation.Canvas(modifier) {
+        val l = z.left * size.width; val t = z.top * size.height
+        val w = (z.right - z.left) * size.width; val h = (z.bottom - z.top) * size.height
+        drawRect(Color.Black.copy(alpha = 0.35f), Offset.Zero, androidx.compose.ui.geometry.Size(size.width, t))
+        drawRect(Color.Black.copy(alpha = 0.35f), Offset(0f, t + h), androidx.compose.ui.geometry.Size(size.width, size.height - t - h))
+        drawRect(Color.Black.copy(alpha = 0.35f), Offset(0f, t), androidx.compose.ui.geometry.Size(l, h))
+        drawRect(Color.Black.copy(alpha = 0.35f), Offset(l + w, t), androidx.compose.ui.geometry.Size(size.width - l - w, h))
+        drawRect(Color.White.copy(alpha = 0.9f), Offset(l, t), androidx.compose.ui.geometry.Size(w, h),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
+        val k = minOf(14.dp.toPx(), w / 3, h / 3); val sw = 3.dp.toPx()
+        listOf(Offset(l, t) to Offset(1f, 1f), Offset(l + w, t) to Offset(-1f, 1f), Offset(l, t + h) to Offset(1f, -1f), Offset(l + w, t + h) to Offset(-1f, -1f)).forEach { (p, d) ->
+            drawLine(CrimsonRed, p, Offset(p.x + d.x * k, p.y), sw); drawLine(CrimsonRed, p, Offset(p.x, p.y + d.y * k), sw)
         }
     }
 }

@@ -1,12 +1,14 @@
 package com.metalsyntax.yihomelocal
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Videocam
@@ -31,7 +33,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.fragment.app.FragmentActivity() {
+    private var stoppedAt = 0L
+    private val relock = androidx.compose.runtime.mutableIntStateOf(0)
+
+    override fun onStop() { super.onStop(); stoppedAt = System.currentTimeMillis() }
+
+    override fun onStart() {
+        super.onStart()
+        if (stoppedAt > 0 && System.currentTimeMillis() - stoppedAt > AppLock.RELOCK_MS) relock.intValue++
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val store = Store(this)
@@ -47,6 +59,26 @@ class MainActivity : ComponentActivity() {
             }
             YiSecureTheme {
                 val scope = rememberCoroutineScope()
+                // bloqueo con huella: se pide al abrir y al volver tras >30 s en segundo plano
+                var unlockedApp by remember { mutableStateOf(!store.appLock) }
+                val relockTick = relock.intValue
+                LaunchedEffect(relockTick) { if (relockTick > 0 && store.appLock) unlockedApp = false }
+                if (!unlockedApp) {
+                    var lockMsg by remember { mutableStateOf<String?>(null) }
+                    fun ask() = AppLock.prompt(this@MainActivity, onOk = { unlockedApp = true }, onError = { lockMsg = it })
+                    LaunchedEffect(Unit) { ask() }
+                    Surface(Modifier.fillMaxSize(), color = PitchBlack) {
+                        Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Fingerprint, null, tint = CrimsonRed, modifier = Modifier.size(56.dp))
+                            Spacer(Modifier.height(16.dp))
+                            Text("YiSecure está bloqueada", color = PureWhite, fontSize = 20.sp)
+                            lockMsg?.let { Spacer(Modifier.height(8.dp)); Text(it, color = MutedText, fontSize = 13.sp) }
+                            Spacer(Modifier.height(24.dp))
+                            com.metalsyntax.yihomelocal.ui.components.PrimaryButton("Desbloquear") { lockMsg = null; ask() }
+                        }
+                    }
+                    return@YiSecureTheme
+                }
                 var session by remember { mutableStateOf(store.session) }
                 var cameras by remember { mutableStateOf(store.cameras) }
                 var selected by remember { mutableStateOf<CameraDevice?>(null) }

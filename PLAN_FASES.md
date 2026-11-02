@@ -59,15 +59,16 @@ Reglas:
 | 5.3 | Controles de reproducción: evento anterior/siguiente, ±30 s, ±5 min, pausa/reanudar. **Sin 2x/4x/8x**: el SDK solo tiene seekTo/pausePlay/resumePlay. | SDK | hecho (velocidad no posible) |
 | 5.4 | **Barra de uso** de la tarjeta y **Formatear microSD** (`formatTfCard`, con confirmación). | SDK | hecho |
 
-## Fase 6 — Ajustes del diseño
+## Fase 6 — Ajustes del diseño + simplificación (0.9.0)
 
-| # | Tarea | Origen |
-|---|-------|--------|
-| 6.1 | **Zonas de actividad**: dibujar rectángulo sobre el video (`setMotionRect`). | SDK |
-| 6.2 | Badge **"N actualizaciones"** e INSTALAR en la lista de dispositivos (reusa FirmwareUpdate). | Nube + SDK |
-| 6.3 | **Reiniciar cámara** (`rebootDevice`). | SDK |
-| 6.4 | **Sirena / luz de alerta** solo si el modelo la tiene (`setAlertLightStatus`); si no, no se muestra. | SDK |
-| 6.5 | Bloqueo de la app con huella (BiometricPrompt), además del PIN por cámara. | App |
+| # | Tarea | Origen | Estado |
+|---|-------|--------|--------|
+| 6.0 | **Simplificación con "Avanzado"** (skill impeccable · distill). Vivo: sobre el video solo LIVE/REC, hora, IA, Hablar, foto, pantalla completa y ojo; debajo Grabar · Audio · Llamada, tarjetas rápidas, NVR, eventos; en Avanzado calidad, girar, reconectar. Ajustes de la cámara: un panel diario (encendida, alertas, LED, visión nocturna, sensibilidad) + "Privacidad y acceso" (interior + PIN); en Avanzado detecciones, modo vidrio, zona, microSD, firmware, reiniciar, detalles y eliminar. | App | hecho |
+| 6.1 | **Zona de vigilancia**: se dibuja arrastrando sobre la última imagen; la IA del teléfono ignora lo de afuera y se ve sobre el video. Opcional/experimental en la cámara (`getMotionDetect`/`setMotionDetect`; escala deducida de la zona actual, se muestra lo que respondió). | App + SDK | hecho (cámara sin confirmar) |
+| 6.2 | Badge **"N actualizaciones"** e INSTALAR en la lista de Ajustes (versión guardada al abrir los ajustes de cada cámara). | Nube | hecho |
+| 6.3 | **Reiniciar cámara** (`rebootDevice`, con confirmación). | SDK | hecho |
+| 6.4 | Sirena / luz de alerta: el SDK trae `setAlarmRing`, `playDeviceAlarmVoice` y `setAlertLightStatus`, pero sin saber qué modelos los soportan. Se deja hasta tener un modelo con sirena para probarlo. | SDK | pospuesto |
+| 6.5 | **Bloqueo de la app** con huella/rostro o PIN del teléfono (BiometricPrompt); vuelve a pedir tras 30 s en segundo plano. | App | hecho |
 
 ## Fase 7 — Plataforma y calidad
 

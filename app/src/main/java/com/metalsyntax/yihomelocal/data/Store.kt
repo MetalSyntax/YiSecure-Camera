@@ -67,6 +67,22 @@ class Store(ctx: Context) {
     fun isInterior(uid: String) = p.getBoolean("interior_$uid", false)
     fun setInterior(uid: String, v: Boolean) = p.edit().putBoolean("interior_$uid", v).apply()
 
+    /** Zona de vigilancia por cámara (normalizada 0..1, "l,t,r,b"); la IA del teléfono ignora lo de afuera. */
+    fun zone(uid: String): android.graphics.RectF? = p.getString("zone_$uid", null)?.split(",")?.mapNotNull { it.toFloatOrNull() }
+        ?.takeIf { it.size == 4 }?.let { android.graphics.RectF(it[0], it[1], it[2], it[3]) }
+    fun setZone(uid: String, r: android.graphics.RectF?) = p.edit().apply {
+        if (r == null) remove("zone_$uid") else putString("zone_$uid", "${r.left},${r.top},${r.right},${r.bottom}")
+    }.apply()
+
+    /** Última versión de firmware leída por P2P (para avisar de actualizaciones en la lista sin conectar). */
+    fun firmware(uid: String): String? = p.getString("fw_$uid", null)
+    fun setFirmware(uid: String, v: String) = p.edit().putString("fw_$uid", v).apply()
+
+    /** Bloqueo de la app con huella / PIN del teléfono al abrirla. */
+    var appLock: Boolean
+        get() = p.getBoolean("app_lock", false)
+        set(v) = p.edit().putBoolean("app_lock", v).apply()
+
     var ai: Boolean
         get() = p.getBoolean("ai", true)
         set(v) = p.edit().putBoolean("ai", v).apply()

@@ -16,8 +16,8 @@ android {
         applicationId = "com.metalsyntax.yihomelocal"
         minSdk = 24
         targetSdk = 34
-        versionCode = 9
-        versionName = "0.8.0"
+        versionCode = 10
+        versionName = "0.9.0"
         buildConfigField("String", "YI_LOGIN_KEY", "\"${yi.getProperty("YI_LOGIN_KEY", "")}\"")
         buildConfigField("String", "YI_PAIR_XOR", "\"${yi.getProperty("YI_PAIR_XOR", "")}\"")
         // las .so del SDK de Yi solo están en arm64 (jniLibs/arm64-v8a); armeabi-v7a deja instalar en tablets de 32 bits
@@ -79,6 +79,7 @@ dependencies {
 
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
 
