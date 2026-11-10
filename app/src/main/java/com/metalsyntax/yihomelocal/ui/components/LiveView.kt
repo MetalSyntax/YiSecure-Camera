@@ -94,6 +94,7 @@ fun LiveView(
         val video = VideoDecoder(sf)
         val sound = AudioDecoder()
         live = false
+        com.metalsyntax.yihomelocal.ai.WatchService.hold(camera.uid) // el SDK comparte la conexión: la vigilancia la suelta
         val cam = runCatching { YiP2p.open(camera, quality, audio, object : YiP2p.Listener() {
             override fun onState(text: String, connected: Boolean) {
                 if (connected) live = true
@@ -117,6 +118,7 @@ fun LiveView(
             cam?.let(YiP2p::close)
             video.release()
             sound.release()
+            com.metalsyntax.yihomelocal.ai.WatchService.unhold(camera.uid)
         }
     }
 }

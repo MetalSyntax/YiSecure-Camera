@@ -92,6 +92,11 @@ class Store(ctx: Context) {
         get() = p.getBoolean("ai", true)
         set(v) = p.edit().putBoolean("ai", v).apply()
 
+    /** Vigilancia IA en segundo plano (WatchService): analiza las cámaras aunque la app esté cerrada. */
+    var aiBackground: Boolean
+        get() = p.getBoolean("ai_bg", false)
+        set(v) = p.edit().putBoolean("ai_bg", v).apply()
+
     /** 0 = según el sistema, 1 = oscuro, 2 = claro. */
     var theme: Int
         get() = p.getInt("theme", 0)

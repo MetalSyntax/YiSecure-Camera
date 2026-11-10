@@ -252,6 +252,8 @@ object YiP2p {
         }
     }
 
+    const val AUTH_REJECTED = -20009
+
     /** Solo lo que usa la app; el resto de callbacks del SDK se ignoran. */
     abstract class Listener : AntsCameraListener {
         // el SDK entrega por receiveVideoFrameData o por ...New según el modo; usamos el primero que llegue
@@ -264,7 +266,10 @@ object YiP2p {
 
         override fun receiveConnectSuccess() = onState("Conectado", true)
         override fun receiveConnectingProgress(p: Int) = onState("Conectando… $p%", false)
-        override fun receiveErrorState(s: String?, a: Int, b: Int) = onState("Error $a/$b ${s.orEmpty()}", false)
+        // -20009: la cámara rechaza la contraseña P2P (cambió en la nube); la app la actualiza al abrir
+        override fun receiveErrorState(s: String?, a: Int, b: Int) =
+            if (a == AUTH_REJECTED || b == AUTH_REJECTED) onState("Contraseña de la cámara cambiada · cierra y abre la app para actualizarla", false)
+            else onState("Error $a/$b ${s.orEmpty()}", false)
         override fun receivePasswordError(a: Int, b: Int) = onState("Contraseña P2P rechazada ($a)", false)
         override fun receiveVideoFrameData(f: AVFrame) = frame(1, f)
         override fun receiveVideoFrameDataNew(f: AVFrame) = frame(2, f)

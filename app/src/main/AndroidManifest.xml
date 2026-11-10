@@ -11,6 +11,11 @@
     <!-- "Hablar" (push-to-talk) hacia la cámara -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- vigilancia IA en segundo plano (WatchService) y arrancarla al encender el teléfono -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- allowBackup=false: las preferencias guardan el token de la cuenta Yi y las contraseñas P2P -->
     <!-- Android 11+: ver Kami Home / Yi Home para cargar su SDK en el APK de release -->
@@ -41,6 +46,15 @@
         <receiver android:name=".CameraWidget" android:exported="false" android:label="YiSecure">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_camera_info" />
+        </receiver>
+        <service
+            android:name=".ai.WatchService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Análisis local con IA del video de cámaras de seguridad propias" />
+        </service>
+        <receiver android:name=".ai.BootReceiver" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
         </receiver>
         <provider
             android:name="androidx.core.content.FileProvider"

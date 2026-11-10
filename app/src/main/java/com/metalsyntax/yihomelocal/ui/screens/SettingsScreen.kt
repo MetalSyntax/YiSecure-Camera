@@ -43,6 +43,8 @@ fun SettingsScreen(
     onSilent: (Boolean) -> Unit = {},
     kiosk: Boolean = false,
     onKiosk: (Boolean) -> Unit = {},
+    /** Se aceptó una cámara compartida: recargar la lista desde la nube. */
+    onCamerasChanged: () -> Unit = {},
 ) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val store = remember { com.metalsyntax.yihomelocal.data.Store(ctx) }
@@ -92,6 +94,7 @@ fun SettingsScreen(
                     Mono("AÑADIR NUEVA CÁMARA", PureWhite, 12.sp)
                 }
             }
+            store.session?.let { ss -> ReceivedInvitesSection(YiCloud(region), ss, onCamerasChanged) }
             SectionTitle("Alertas y notificaciones", Icons.Default.NotificationsActive)
             Column(Modifier.fillMaxWidth().panel().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Toggle("Notificaciones en el teléfono", "Revisa la nube de Yi cada 15 min y avisa de alertas nuevas con su imagen", notify) { on ->
@@ -100,6 +103,11 @@ fun SettingsScreen(
                     else setNotify(on)
                 }
                 Toggle("Modo silencioso", "Apaga las alertas push de todas las cámaras (también en Kami/Yi Home) y los avisos de esta app", silent, onSilent)
+                var watch by remember { mutableStateOf(store.aiBackground) }
+                Toggle("IA en segundo plano", "Analiza todas las cámaras con la IA del teléfono aunque la app esté cerrada (notificación fija; usa más batería y datos)", watch) { on ->
+                    watch = on; store.aiBackground = on
+                    if (on) com.metalsyntax.yihomelocal.ai.WatchService.start(ctx) else com.metalsyntax.yihomelocal.ai.WatchService.stop(ctx)
+                }
                 if (notify && !silent) Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(testMsg ?: "Revisar ahora sin esperar los 15 min", color = MutedText, fontSize = 12.sp, modifier = Modifier.weight(1f))
                     TextButton(onClick = {
@@ -166,7 +174,7 @@ fun SettingsScreen(
 @Composable
 fun EditCameraScreen(
     camera: CameraDevice, busy: Boolean, hasPin: Boolean, onBack: () -> Unit, onRename: (String) -> Unit, onDelete: () -> Unit,
-    onPin: (String?) -> Unit, cloud: YiCloud? = null, account: YiCloud.Session? = null,
+    onPin: (String?) -> Unit, cloud: YiCloud? = null, account: YiCloud.Session? = null, onShareChanged: () -> Unit = {},
 ) {
     // conexión P2P propia (sin video en pantalla) para leer y cambiar los ajustes que guarda la cámara
     var cam by remember(camera.uid) { mutableStateOf<AntsCamera?>(null) }
@@ -242,6 +250,7 @@ fun EditCameraScreen(
                     }
                 }
             }
+            if (cloud != null && account != null) CameraShareSection(camera, cloud, account, onShareChanged)
             if (cloud != null && account != null) CameraSettings(camera, cam, cloud, account, middle = access, extra = danger)
             else { access(); Advanced("Detalles y eliminar") { danger() } }
             if (busy) CircularProgressIndicator(color = CrimsonRed, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))

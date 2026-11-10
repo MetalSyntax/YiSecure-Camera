@@ -48,6 +48,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         super.onCreate(savedInstanceState)
         val store = Store(this)
         if (store.session != null && store.notify) com.metalsyntax.yihomelocal.data.AlertNotifier.schedule(this, true)
+        if (store.session != null && store.aiBackground) com.metalsyntax.yihomelocal.ai.WatchService.start(this)
 
         setContent {
             var theme by remember { mutableIntStateOf(store.theme) }
@@ -161,6 +162,17 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 fun locked(c: CameraDevice) = pinVersion >= 0 && store.hasPin(c.uid) && c.uid !in unlocked
                 fun guarded(c: CameraDevice, action: () -> Unit) = if (locked(c)) pinAsk = c to action else action()
 
+                // al abrir: lista de cámaras al día desde la nube. Si una cámara se reconfiguró (p. ej. en Kami Home) cambia
+                // su contraseña P2P; con la guardada vieja la cámara rechaza cada comando (-20009) y se queda en "Conectando 25%".
+                LaunchedEffect(session) {
+                    val s = session ?: return@LaunchedEffect
+                    val fresh = runCatching { withContext(Dispatchers.IO) { YiCloud(store.region).devices(s) } }.getOrNull() ?: return@LaunchedEffect
+                    if (fresh.isEmpty() || fresh == cameras) return@LaunchedEffect
+                    store.cameras = fresh; cameras = fresh
+                    selected = selected?.let { c -> fresh.firstOrNull { it.uid == c.uid } } // reabre con los datos nuevos
+                    if (store.aiBackground) com.metalsyntax.yihomelocal.ai.WatchService.start(this@MainActivity)
+                }
+
                 // estado real: pregunta a la red P2P por cada cámara al abrir la lista y cada minuto
                 val listVisible = session != null && selected == null && !adding
                 LaunchedEffect(listVisible, cameras) {
@@ -229,6 +241,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             e, busy, store.hasPin(e.uid).also { pinVersion }, onBack = { editing = null },
                             onPin = { pin -> store.setPin(e.uid, pin); unlocked = unlocked + e.uid; pinVersion++ },
                             cloud = YiCloud(store.region), account = s,
+                            onShareChanged = { cloudCall(after = { editing = null; if (cameras.none { it.uid == e.uid }) selected = null }) },
                             onRename = { name ->
                                 cloudCall(action = { c, ss -> c.rename(ss, e.uid, name) }, after = {
                                     editing = null; selected = selected?.let { sel -> cameras.firstOrNull { it.uid == sel.uid } }
@@ -295,6 +308,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     onAddCamera = { adding = true }, onEditCamera = { c -> guarded(c) { editing = c } },
                                     silent = silent, onSilent = ::setSilent,
                                     kiosk = kiosk, onKiosk = { on -> kiosk = on; store.kiosk = on; if (on) { tab = 1; monitorFull = true } },
+                                    onCamerasChanged = { cloudCall() },
                                     onLogout = {
                                         com.metalsyntax.yihomelocal.data.AlertNotifier.schedule(this@MainActivity, false)
                                         store.session = null; store.cameras = emptyList()

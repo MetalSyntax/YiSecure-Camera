@@ -71,6 +71,7 @@ class YiCloud(private val region: String) {
                 tnpServer = tnp?.optString("InitString").orEmpty(),
                 // la app guarda solo la parte antes de ":" de la licencia
                 tnpKey = tnp?.optString("License").orEmpty().substringBefore(':'),
+                shared = o.optBoolean("share"),
             )
         }
     }
@@ -129,6 +130,61 @@ class YiCloud(private val region: String) {
             "seq" to "1", "userid" to s.userId, "uid" to uid, "pushflag" to if (on) "1" else "0", "uploadflag" to "1"), "PUT")
     }
 
+    // ------------------------------------------------------------------------------------------ compartir
+    // Mismo flujo que "Compartir dispositivo" de Kami/Yi Home (com.ants360.yicamera.base.s → jc.i / jc.h): el dueño invita
+    // a otra cuenta Yi/Kami, esa cuenta acepta y la cámara le aparece en /v5/devices/list con share = true.
+
+    data class ShareUser(val userId: String, val nickname: String, val sharedTime: Long, val lastAccess: Long)
+
+    /** Invitación (enviada o recibida). state: 1 pendiente, 2 aceptada, 3/4 rechazada, 5 vencida. Tiempos en epoch s. */
+    data class ShareInvite(val id: String, val nickname: String, val state: Int, val created: Long, val shareToken: String, val uid: String) {
+        val pending get() = state == 1
+        val stateLabel get() = when (state) { 1 -> "Pendiente"; 2 -> "Aceptada"; 3, 4 -> "Rechazada"; 5 -> "Vencida"; else -> "Estado $state" }
+    }
+
+    private fun shareGet(s: Session, path: String, vararg extra: Pair<String, String>, method: String = "GET") =
+        signedRequest(s, path, linkedMapOf("seq" to "1", "userid" to s.userId).apply { extra.forEach { put(it.first, it.second) } }, method)
+
+    /** Busca una cuenta Yi/Kami por correo (GET /v5/users/search). null = no existe. */
+    fun searchUser(s: Session, email: String): Pair<String, String>? = runCatching {
+        shareGet(s, "/v5/users/search", "email" to email.trim()).optJSONObject("data")
+    }.getOrElse { if (it is ApiException) null else throw it }?.let { d ->
+        d.optString("userid").takeIf { it.isNotEmpty() }?.let { it to d.optString("nickname").ifEmpty { email } }
+    }
+
+    /** Invita a [toUserId] a ver la cámara (POST /v5/deviceshare/invite, type 2 = a una cuenta Yi). Devuelve el id de la invitación. */
+    fun invite(s: Session, uid: String, toUserId: String): String =
+        shareGet(s, "/v5/deviceshare/invite", "uid" to uid, "type" to "2", "share_to_id" to toUserId, method = "POST")
+            .optJSONObject("data")?.optString("invitationid").orEmpty()
+
+    /** Cuentas que ya ven la cámara (GET /v4/deviceshare/shareddetails). */
+    fun sharedWith(s: Session, uid: String): List<ShareUser> = shareGet(s, "/v4/deviceshare/shareddetails", "uid" to uid).optJSONArray("data").objects()
+        .map { ShareUser(it.optString("userid"), it.optString("nickname"), it.optLong("sharedtime"), it.optLong("lastaccesstime")) }
+
+    /** Invitaciones enviadas para esta cámara (GET /v5/deviceshare/invitor/invitations). */
+    fun sentInvites(s: Session, uid: String): List<ShareInvite> = shareGet(s, "/v5/deviceshare/invitor/invitations", "uid" to uid).optJSONArray("data").objects()
+        .map { ShareInvite(it.optString("id"), it.optString("nickname"), it.optInt("state"), it.optLong("created_time"), it.optString("share_token"), uid) }
+
+    /** Anula una invitación pendiente (DELETE /v5/deviceshare/invite). */
+    fun cancelInvite(s: Session, invitationId: String) { shareGet(s, "/v5/deviceshare/invite", "invitationid" to invitationId, method = "DELETE") }
+
+    /** Quita el acceso de [userId] a la cámara (DELETE /v4/deviceshare/inviterdevice). */
+    fun unshare(s: Session, uid: String, userId: String) { shareGet(s, "/v4/deviceshare/inviterdevice", "uid" to uid, "inviteeid" to userId, method = "DELETE") }
+
+    /** Invitaciones recibidas por esta cuenta (GET /v5/deviceshare/invitee/invitations). */
+    fun receivedInvites(s: Session): List<ShareInvite> = shareGet(s, "/v5/deviceshare/invitee/invitations").optJSONArray("data").objects()
+        .map { ShareInvite(it.optString("id"), it.optString("nickname"), it.optInt("state"), it.optLong("created_time"), it.optString("share_token"), it.optString("uid")) }
+
+    /** Acepta o rechaza una invitación recibida (PUT /v5/deviceshare/accept). */
+    fun answerInvite(s: Session, shareToken: String, accept: Boolean) {
+        shareGet(s, "/v5/deviceshare/accept", "share_token" to shareToken, "accept" to accept.toString(), method = "PUT")
+    }
+
+    /** La cuenta invitada deja de ver una cámara compartida (DELETE /v4/deviceshare/inviteedevice). */
+    fun leaveShared(s: Session, uid: String) { shareGet(s, "/v4/deviceshare/inviteedevice", "uid" to uid, method = "DELETE") }
+
+    private fun org.json.JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
+
     data class Firmware(val needUpdate: Boolean, val version: String, val notes: String, val url: String)
 
     /**
@@ -172,7 +228,8 @@ class YiCloud(private val region: String) {
         val q = p.entries.joinToString("&") { "${it.key}=${URLEncoder.encode(it.value, "UTF-8")}" }
         val c = URL("$base$path?$q").openConnection() as HttpURLConnection
         c.connectTimeout = 15000; c.readTimeout = 15000
-        if (method != "GET") { c.requestMethod = method; c.doOutput = true; c.outputStream.close() }
+        // POST/PUT con cuerpo vacío como la app oficial; DELETE sin cuerpo (HttpURLConnection no deja escribir en DELETE)
+        if (method != "GET") { c.requestMethod = method; if (method != "DELETE") { c.doOutput = true; c.outputStream.close() } }
         try {
             val body = if (c.responseCode < 400) c.inputStream else c.errorStream ?: c.inputStream
             val json = JSONObject(body.bufferedReader().readText())

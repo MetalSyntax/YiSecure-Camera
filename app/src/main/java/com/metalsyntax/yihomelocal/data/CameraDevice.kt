@@ -14,11 +14,13 @@ data class CameraDevice(
     val p2pId: String,
     val tnpServer: String,
     val tnpKey: String,
+    /** Cámara de otra cuenta compartida con esta (no se puede renombrar, borrar ni volver a compartir). */
+    val shared: Boolean = false,
 ) {
     fun toJson() = JSONObject().apply {
         put("uid", uid); put("name", name); put("model", model); put("online", online)
         put("password", password); put("encrypted", encrypted); put("localIp", localIp)
-        put("p2pId", p2pId); put("tnpServer", tnpServer); put("tnpKey", tnpKey)
+        put("p2pId", p2pId); put("tnpServer", tnpServer); put("tnpKey", tnpKey); put("shared", shared)
     }
 
     companion object {
@@ -41,7 +43,7 @@ data class CameraDevice(
         fun fromJson(o: JSONObject) = CameraDevice(
             o.getString("uid"), o.getString("name"), modelName(o.optString("model")), o.optBoolean("online"),
             o.getString("password"), o.optBoolean("encrypted", true), o.optString("localIp"),
-            o.getString("p2pId"), o.optString("tnpServer"), o.optString("tnpKey"),
+            o.getString("p2pId"), o.optString("tnpServer"), o.optString("tnpKey"), o.optBoolean("shared"),
         )
     }
 }
