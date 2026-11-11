@@ -16,8 +16,8 @@ android {
         applicationId = "com.metalsyntax.yihomelocal"
         minSdk = 24
         targetSdk = 34
-        versionCode = 100
-        versionName = "1.0.0"
+        versionCode = 110
+        versionName = "1.1.0"
         buildConfigField("String", "YI_LOGIN_KEY", "\"${yi.getProperty("YI_LOGIN_KEY", "")}\"")
         buildConfigField("String", "YI_PAIR_XOR", "\"${yi.getProperty("YI_PAIR_XOR", "")}\"")
         // las .so del SDK de Yi solo están en arm64 (jniLibs/arm64-v8a); armeabi-v7a deja instalar en tablets de 32 bits
@@ -58,7 +58,7 @@ android {
     }
 
     // el modelo de IA se mapea en memoria: no comprimirlo dentro del APK
-    androidResources { noCompress += "tflite" }
+    androidResources { noCompress += listOf("tflite", "task") }
 
     // lo de Yi/Kami (.so e imágenes de modelos) solo va en debug; release lo toma de Kami Home instalada
     sourceSets {
@@ -83,7 +83,8 @@ dependencies {
     // QR de emparejamiento que lee la cámara
     implementation("com.google.zxing:core:3.5.3")
     // detección de personas/vehículos/paquetes en el teléfono (EfficientDet-Lite0 en assets)
-    implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
+    // MediaPipe: postura (pose) y expresiones de la cara (blendshapes) de cada persona detectada
+    implementation("com.google.mediapipe:tasks-vision:0.10.26")
     // leer la etiqueta QR pegada en la cámara (escáner de Google Play services: sin permiso de cámara)
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 

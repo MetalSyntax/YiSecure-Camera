@@ -56,6 +56,8 @@ import com.metalsyntax.yihomelocal.ai.Kind
 import com.metalsyntax.yihomelocal.ai.Scene
 import com.metalsyntax.yihomelocal.ai.SceneAnalyzer
 import com.metalsyntax.yihomelocal.ai.Sentinel
+import com.metalsyntax.yihomelocal.ai.People
+import com.metalsyntax.yihomelocal.ai.certainty
 import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -175,11 +177,13 @@ fun CameraDetailScreen(
         if (!live) return@LaunchedEffect
         val analyzer = SceneAnalyzer()
         val sentinel = Sentinel()
+        var n = 0
         while (true) {
             delay(800)
             val v = tools.view ?: continue
             if (!v.isAvailable) continue
-            val bmp = v.getBitmap(480, 270) ?: continue
+            // 960×540: con 480×270 los vehículos y personas lejanos quedaban en pocos píxeles
+            val bmp = v.getBitmap(960, 540) ?: continue
             val now = System.currentTimeMillis()
             val replay = sdAt != null
             val (sc, d, found) = withContext(Dispatchers.Default) {
@@ -188,10 +192,12 @@ fun CameraDetailScreen(
                     if (zone != null && raw.motion?.let { android.graphics.RectF.intersects(it, zone) } == false) raw.copy(motion = null) else raw
                 }
                 // con zona de vigilancia, solo cuenta lo que tiene el centro dentro de la zona
-                val d = (if (aiOn) runCatching { Detector.detect(ctx, bmp) }.getOrDefault(emptyList()) else emptyList())
+                val raw = (if (aiOn) runCatching { Detector.detect(ctx, bmp, tiles = sc.motion != null || n++ % 3 == 0) }.getOrDefault(emptyList()) else emptyList())
                     .filter { zone == null || zone.contains(it.box.centerX(), it.box.centerY()) }
+                    .let { l -> runCatching { People.describe(ctx, bmp, l) }.getOrDefault(l) }
+                val r = sentinel.update(now, raw, sc)
                 // en la reproducción de la microSD no se guardan eventos: la hora no sería la real
-                Triple(sc, d, if (aiOn && !replay) sentinel.update(now, d, sc) else emptyList())
+                Triple(sc, r.dets, if (aiOn && !replay) r.findings else emptyList())
             }
             scene = sc
             val motion = sc.motion?.takeIf { aiOn && d.isEmpty() }?.let { listOf(Det(if (sc.shadow) Kind.SHADOW else Kind.MOTION, "", 1f, it)) }.orEmpty()
@@ -590,7 +596,8 @@ private fun DetectionOverlay(dets: List<Det>, modifier: Modifier) {
             val sz = androidx.compose.ui.geometry.Size(d.box.width() * size.width, d.box.height() * size.height)
             val c = if (d.kind == Kind.MOTION || d.kind == Kind.SHADOW) Color.White else CrimsonRed
             drawRect(c, tl, sz, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
-            val label = if (d.name.isEmpty()) d.kind.label else "${d.kind.label} ${(d.score * 100).toInt()}%"
+            // "PERSONA #01 · seguro" y debajo "adulto · de pie · alegre"
+            val label = d.label() + d.traits().let { if (it.isEmpty()) "" else "\n$it" }
             val t = measurer.measure(label, androidx.compose.ui.text.TextStyle(color = OnAccent, fontSize = 10.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
             val y = (tl.y - t.size.height).coerceAtLeast(0f)
             drawRect(c, Offset(tl.x, y), androidx.compose.ui.geometry.Size(t.size.width + 8f, t.size.height.toFloat()))
@@ -683,7 +690,7 @@ fun LocalEventDialog(e0: LocalEvent, camName: String, onDismiss: () -> Unit, onS
                 }
             }
             Mono("$camName · " + SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.US).format(Date(e.time)) +
-                (if (e.score > 0) " · confianza ${(e.score * 100).toInt()} %" else "") + (if (e.night) " · IR nocturno" else ""), MutedText, 10.sp)
+                (if (e.score > 0) " · detección ${certainty(e.score)}" else "") + (if (e.night) " · IR nocturno" else ""), MutedText, 10.sp)
             Text(e.desc, color = MutedText, fontSize = 13.sp)
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
                 img?.let { androidx.compose.foundation.Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }

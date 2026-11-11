@@ -98,10 +98,11 @@ class WatchService : Service() {
         val analyzer = SceneAnalyzer()
         val sentinel = Sentinel()
         var retries = 0
+        var tick = 0
         while (scope.isActive) {
             if (cam.uid in held) { drop(cam.uid); delay(2_000); continue }
             val conn = conns[cam.uid] ?: open(cam) ?: run { delay(backoff(retries++)); null } ?: continue
-            delay(1_000)
+            delay(2_000) // un análisis cada 2 s por cámara: con 3 cámaras a 1/s el teléfono iba a ~170 % de CPU
             val (_, grab) = conn
             if (System.currentTimeMillis() - grab.lastFrameAt > 30_000 && grab.lastFrameAt != 0L || stalledSinceOpen(cam.uid)) {
                 Log.i(TAG, "${cam.name}: sin video, reconectando")
@@ -113,14 +114,17 @@ class WatchService : Service() {
             val zone = store.zone(cam.uid)
             val now = System.currentTimeMillis()
             val (dets, found, night) = withContext(Dispatchers.Default) {
-                val bmp = Bitmap.createScaledBitmap(frame, 480, 270, true)
+                // cuadro completo (SD 640×360): reducirlo a 480×270 perdía vehículos y personas lejanos
+                val bmp = frame.copy(Bitmap.Config.ARGB_8888, false)
                 val sc = analyzer.analyze(bmp).let { raw ->
                     if (zone != null && raw.motion?.let { android.graphics.RectF.intersects(it, zone) } == false) raw.copy(motion = null) else raw
                 }
-                val d = runCatching { Detector.detect(this@WatchService, bmp) }.getOrDefault(emptyList())
+                val raw = runCatching { Detector.detect(this@WatchService, bmp, tiles = sc.motion != null || tick++ % 3 == 0) }.getOrDefault(emptyList())
                     .filter { zone == null || zone.contains(it.box.centerX(), it.box.centerY()) }
+                    .let { l -> runCatching { People.describe(this@WatchService, bmp, l) }.getOrDefault(l) }
+                val r = sentinel.update(now, raw, sc)
+                val d = r.dets; val f = r.findings
                 val motion = sc.motion?.takeIf { d.isEmpty() }?.let { listOf(Det(if (sc.shadow) Kind.SHADOW else Kind.MOTION, "", 1f, it)) }.orEmpty()
-                val f = sentinel.update(now, d, sc)
                 if (f.isNotEmpty()) f.forEach { LocalEvents.add(this@WatchService, cam.uid, now, it, bmp, d + motion, sc.night) }
                 Triple(d, f, sc.night)
             }

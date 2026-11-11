@@ -212,7 +212,7 @@ private fun LocalEventCard(e: LocalEvent, camName: String, isNew: Boolean, onOpe
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(e.desc, color = MutedText, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                if (e.score > 0) Mono("${LocalEvents.objLabel(e.obj)} · ${(e.score * 100).toInt()} %", PureWhite, 10.sp,
+                if (e.score > 0) Mono("${LocalEvents.objLabel(e.obj)} · ${com.metalsyntax.yihomelocal.ai.certainty(e.score)}", PureWhite, 10.sp,
                     Modifier.clip(RoundedCornerShape(2.dp)).background(CardBackground).padding(horizontal = 6.dp, vertical = 2.dp))
             }
         }

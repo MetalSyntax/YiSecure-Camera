@@ -52,7 +52,9 @@ object LocalEvents {
         img.outputStream().use { out.compress(Bitmap.CompressFormat.JPEG, 80, it) }
         out.recycle()
         val top = dets.filter { it.kind == f.kind }.maxByOrNull { it.score }
-        val ev = LocalEvent(uid, time, f.kind.label, f.title, f.desc, img.path, top?.name.orEmpty(), top?.score ?: 0f, night)
+        // el objeto del hallazgo (Camión #02), no el más seguro de su tipo
+        val ev = LocalEvent(uid, time, f.kind.label, f.title, f.desc, img.path, f.obj.ifEmpty { top?.name.orEmpty() },
+            if (f.obj.isNotEmpty()) f.score else top?.score ?: 0f, night)
         // rotación: los favoritos no cuentan ni se borran
         val all = listOf(ev) + list(ctx, uid)
         val (favs, rest) = all.partition { it.fav }
@@ -80,7 +82,7 @@ object LocalEvents {
 
     fun delete(ctx: Context, uid: String) { File(ctx.filesDir, "ai/$uid").deleteRecursively() }
 
-    /** Cajas rojas con etiqueta, como en el diseño (PERSONA 96%). */
+    /** Cajas rojas con etiqueta, como en el diseño (PERSONA #01 · seguro). */
     fun drawBoxes(bmp: Bitmap, dets: List<Det>) {
         if (dets.isEmpty()) return
         val c = Canvas(bmp)
@@ -89,18 +91,16 @@ object LocalEvents {
         val stroke = Paint().apply { color = red; style = Paint.Style.STROKE; strokeWidth = maxOf(2f, w / 240f) }
         val fill = Paint().apply { color = red }
         val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt(); textSize = maxOf(12f, w / 40f); typeface = android.graphics.Typeface.MONOSPACE }
-        // número por tipo, del más seguro al menos (PERSONA #01 · 96%, GATO #01 · 81%)
-        val num = HashMap<String, Int>()
+        // PERSONA #01 · seguro / adulto · de pie · alegre (número = el que le dio el seguimiento)
         dets.sortedByDescending { it.score }.forEach { d ->
             val l = d.box.left * w; val t = d.box.top * h
             c.drawRect(l, t, d.box.right * w, d.box.bottom * h, stroke)
-            val name = objLabel(d.name).ifEmpty { d.kind.label }
-            val n = (num[name] ?: 0) + 1; num[name] = n
-            val label = if (d.name.isEmpty()) d.kind.label else "$name #%02d · ${(d.score * 100).toInt()}%%".format(n)
-            val tw = text.measureText(label) + 8
-            val ty = if (t > text.textSize + 4) t - text.textSize - 4 else t
-            c.drawRect(l, ty, l + tw, ty + text.textSize + 4, fill)
-            c.drawText(label, l + 4, ty + text.textSize, text)
+            val lines = listOf(d.label(), d.traits()).filter { it.isNotEmpty() }
+            val lh = text.textSize + 4
+            val tw = lines.maxOf { text.measureText(it) } + 8
+            val ty = if (t > lh * lines.size) t - lh * lines.size else t
+            c.drawRect(l, ty, l + tw, ty + lh * lines.size, fill)
+            lines.forEachIndexed { i, s -> c.drawText(s, l + 4, ty + text.textSize + i * lh, text) }
         }
     }
 }
